@@ -1,0 +1,44 @@
+---
+title: CLAUDE.md
+description: Guidance for Claude Code and other AI agents in this repo.
+---
+
+# CLAUDE.md
+
+Guidance for Claude Code (and other AI agents) in this repo.
+
+Read `AGENTS.md` and `private/project_log.md` before starting any work.
+Session continuity lives in the `▶ Resume here` block at the top of `TODO.md`.
+Priorities are GitHub issue labels; `TODO.md` is their generated mirror.
+
+## What this is
+
+General-purpose ngdpbase add-ons, each independent. The first is a request-response engine
+(see [README.md](README.md) and `docs/plans/`). Brainstorming stage: no code yet.
+
+## Build / run
+
+<!-- The exact commands an agent needs to compile, test, and run this project. -->
+<!-- Example: -->
+<!-- ```bash -->
+<!-- npm run dev       # start dev server -->
+<!-- npm test          # run test suite -->
+<!-- npm run build     # production build -->
+<!-- ``` -->
+
+## Architecture
+
+<!-- Key files, directories, and data-flow summary. -->
+<!-- What to read first when diving into the code. -->
+<!-- Any generated files that must not be hand-edited. -->
+
+## Conventions
+
+<!-- Project-specific rules beyond what AGENTS.md covers. -->
+<!-- Examples: naming patterns, preferred libraries, things to never do. -->
+
+## Security / secrets
+
+<!-- Anything that must never be committed. -->
+<!-- Real data, credentials, keys, PHI, etc. -->
+<!-- Only fill this in if there are non-obvious pitfalls. -->
