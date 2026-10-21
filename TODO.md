@@ -1,7 +1,7 @@
 ---
 title: TODO
 description: Priority bands and resume pointer for this repo.
-last_updated: "2026-10-16"
+last_updated: "2026-10-21"
 ---
 
 # TODO
@@ -44,7 +44,7 @@ last_updated: "2026-10-16"
 <!-- Issues labeled `epic`. This band outranks a priority label, so an epic does not get -->
 <!-- buried among the issues that implement it; the priority label orders this band instead. -->
 
-*None.*
+- [#9](https://github.com/jwilleke/ngdpbase-addons/issues/9) [EPIC] condo add-on
 
 ## 🟠 P1
 
@@ -52,7 +52,7 @@ last_updated: "2026-10-16"
 
 ## 🟡 P2
 
-*None.*
+- [#2](https://github.com/jwilleke/ngdpbase-addons/issues/2) [kit] Kit Sync cannot open its pull request
 
 ## 🔵 In review
 
@@ -70,7 +70,12 @@ last_updated: "2026-10-16"
 <!-- Issues and PRs with no resolvable placement. `/pstatus` labels untriaged issues `needs-triage`; -->
 <!-- an open PR lands here when it has neither a placement label nor a linked issue to inherit from. -->
 
-*None.*
+- [#3](https://github.com/jwilleke/ngdpbase-addons/issues/3) condo: scaffold the add-on
+- [#4](https://github.com/jwilleke/ngdpbase-addons/issues/4) condo: CondoUnitManager with JSON storage and backup
+- [#5](https://github.com/jwilleke/ngdpbase-addons/issues/5) condo: permissions and audit events
+- [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6) condo: API and admin routes and view
+- [#7](https://github.com/jwilleke/ngdpbase-addons/issues/7) condo: `[{CondoUnit}]` plugin
+- [#8](https://github.com/jwilleke/ngdpbase-addons/issues/8) condo: directory CSV import with column map
 
 <!-- KIT:END -->
 
