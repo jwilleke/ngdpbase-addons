@@ -1,0 +1,24 @@
+{
+  "_comment": "Defaults for the condo add-on. A site overrides any key in its app-custom-config.json.",
+  "ngdpbase.addons.condo.enabled": false,
+  "ngdpbase.permissions.definitions": {
+    "condo-manage": {
+      "description": "Manage the condo add-on: units, owners and the directory import",
+      "label": "Manage condo units",
+      "icon": "building",
+      "color": "#0d6efd"
+    }
+  },
+  "ngdpbase.access.policies": [
+    {
+      "id": "condo-manage-access",
+      "name": "Condo management",
+      "description": "Who may manage condo units",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [{ "type": "role", "value": "admin" }],
+      "resources": [{ "type": "page", "pattern": "*" }],
+      "actions": ["condo-manage"]
+    }
+  ]
+}

@@ -91,3 +91,16 @@ the others and of any one site. Add-ons and plans are listed in [README.md](READ
   Replaces `fairways-gen2-website/addons/fairways`; The Fairways is the reference site.
 - Add-on rules: ngdpbase `docs/guides/addons-developer-guide.md` and the guides it links.
 - Repo tooling follows [mjs-project-template](https://github.com/jwilleke/mjs-project-template).
+
+## Local ngdpbase
+
+- __Instance:__ a separate ngdpbase clone at `/Volumes/hd2A/test-instances/ngdpbase-addons-instance`
+  (`npm ci`, `npm run build`), app name `ngdpbase-addons`, port 3004, its own `./data`. Its `.env`
+  (git-ignored) holds the admin password and backup key. Its `data/config/app-custom-config.json` adds
+  this repository's `addons/` to `addons-path` and enables the add-ons.
+- __Only this instance.__ The operator runs several ngdpbase instances on this machine. Never touch
+  another one's config, and never run a pm2 command on `all`; control this one with its `./server.sh`.
+- __Build and test an add-on:__ `cd addons/<slug> && npm install && npm test` (builds `.ts` to `.js` in
+  place, then runs vitest).
+- __Run:__ `cd /Volumes/hd2A/test-instances/ngdpbase-addons-instance && ./server.sh restart`, then
+  check `data/logs/app.log` for `Add-on loaded: <slug>`. The site is <http://localhost:3004>.
