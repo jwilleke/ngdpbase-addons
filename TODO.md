@@ -59,7 +59,7 @@ last_updated: "2026-10-21"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#3](https://github.com/jwilleke/ngdpbase-addons/issues/3) condo: scaffold the add-on
 
 ## ⏸ Deferred
 
@@ -70,7 +70,6 @@ last_updated: "2026-10-21"
 <!-- Issues and PRs with no resolvable placement. `/pstatus` labels untriaged issues `needs-triage`; -->
 <!-- an open PR lands here when it has neither a placement label nor a linked issue to inherit from. -->
 
-- [#3](https://github.com/jwilleke/ngdpbase-addons/issues/3) condo: scaffold the add-on
 - [#4](https://github.com/jwilleke/ngdpbase-addons/issues/4) condo: CondoUnitManager with JSON storage and backup
 - [#5](https://github.com/jwilleke/ngdpbase-addons/issues/5) condo: permissions and audit events
 - [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6) condo: API and admin routes and view
