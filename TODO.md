@@ -59,7 +59,7 @@ last_updated: "2026-10-21"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-- [#3](https://github.com/jwilleke/ngdpbase-addons/issues/3) condo: scaffold the add-on
+*None.*
 
 ## ⏸ Deferred
 
