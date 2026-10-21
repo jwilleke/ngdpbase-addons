@@ -59,7 +59,7 @@ last_updated: "2026-10-21"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#11](https://github.com/jwilleke/ngdpbase-addons/issues/11) condo: owners from user records (parcel + condoUserType)
 
 ## ⏸ Deferred
 
@@ -74,6 +74,7 @@ last_updated: "2026-10-21"
 - [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6) condo: API and admin routes and view
 - [#7](https://github.com/jwilleke/ngdpbase-addons/issues/7) condo: `[{CondoUnit}]` plugin
 - [#8](https://github.com/jwilleke/ngdpbase-addons/issues/8) condo: directory CSV import with column map
+- [#12](https://github.com/jwilleke/ngdpbase-addons/issues/12) condo: set condoUserType and parcel from The Fairways' type
 
 <!-- KIT:END -->
 
