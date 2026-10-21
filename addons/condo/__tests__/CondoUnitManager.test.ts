@@ -6,14 +6,17 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import type { ActorContext } from '@jwilleke/ngdpbase-types';
 import CondoUnitManager, { createProvider } from '../managers/CondoUnitManager.js';
 import { unitTypesFrom } from '../managers/unitTypes.js';
 import { lateChargesFrom } from '../managers/lateCharges.js';
-import { FAIRWAYS_LATE_CHARGES, FAIRWAYS_UNIT_TYPES, SAMPLE_UNITS } from './fixtures.js';
+import { FAIRWAYS_LATE_CHARGES, FAIRWAYS_UNIT_TYPES, SAMPLE_UNITS, SAMPLE_USERS } from './fixtures.js';
 
 describe('CondoUnitManager', () => {
   let dataPath: string;
   let bumps: number;
+  let asked: unknown[];
+  const ctx = { username: 'treasurer' } as unknown as ActorContext;
 
   async function open(units = SAMPLE_UNITS): Promise<CondoUnitManager> {
     writeFileSync(path.join(dataPath, 'units.json'), JSON.stringify(units));
@@ -21,6 +24,7 @@ describe('CondoUnitManager', () => {
       provider: await createProvider('json', dataPath),
       unitTypes: unitTypesFrom(FAIRWAYS_UNIT_TYPES),
       lateCharges: lateChargesFrom(FAIRWAYS_LATE_CHARGES),
+      users: async (ctx) => { asked.push(ctx); return SAMPLE_USERS; },
       bump: async () => { bumps++; }
     });
     await manager.initialize();
@@ -30,6 +34,7 @@ describe('CondoUnitManager', () => {
   beforeEach(() => {
     dataPath = mkdtempSync(path.join(tmpdir(), 'condo-units-'));
     bumps = 0;
+    asked = [];
   });
   afterEach(() => { rmSync(dataPath, { recursive: true, force: true }); });
 
@@ -51,27 +56,44 @@ describe('CondoUnitManager', () => {
     await expect(createProvider('sql', dataPath)).rejects.toThrow('unknown provider "sql" (known: json)');
   });
 
-  test('search matches any field and owners, ignoring case', async () => {
+  test('search matches any field, ignoring case', async () => {
     const m = await open();
     expect(m.search('CORNER').map(u => u.id)).toEqual(['66-00002.000']);
-    expect(m.search('sam example').map(u => u.id)).toEqual(['66-00001.000']);
+    expect(m.search('mount vernon').map(u => u.id)).toEqual(['66-00001.000']);
     expect(m.search('105').map(u => u.id)).toEqual(['66-00003.000']);
     expect(m.search('').length).toBe(3);
   });
 
-  test('owners: given shares kept, the rest split evenly; plain names still read', async () => {
+  test('owners come from the user records: given shares kept, the rest split evenly', async () => {
     const m = await open();
-    expect(m.owners('66-00001.000')).toEqual([
-      { name: 'Pat Example', person: 'person:0001', share: 60 },
-      { name: 'Sam Example', person: null, share: 40 }
+    expect(await m.owners(ctx, '66-00001.000')).toEqual([
+      { username: 'pat.example', name: 'Pat Example', email: 'pat@example.org', share: 60 },
+      { username: 'sam.example', name: 'Sam Example', email: null, share: 40 }
     ]);
-    expect(m.owners('66-00002.000')).toEqual([{ name: 'Lee Owner', person: null, share: 100 }]);
-    expect(m.owners('66-00003.000')).toEqual([]);
+    // sam.example owns two units; a single parcel string still reads; no displayName falls back to the username
+    expect(await m.owners(ctx, '66-00002.000')).toEqual([
+      { username: 'kim.both', name: 'kim.both', email: null, share: 50 },
+      { username: 'sam.example', name: 'Sam Example', email: null, share: 50 }
+    ]);
+    expect(await m.owners(ctx, '66-00003.000')).toEqual([]);
+    expect(asked.every(c => c === ctx)).toBe(true); // users are read as the caller
+  });
+
+  test('occupants are the users marked occupant, never billed', async () => {
+    const m = await open();
+    expect((await m.occupants(ctx, '66-00001.000')).map(o => o.username)).toEqual(['lee.renter']);
+    expect((await m.occupants(ctx, '66-00002.000')).map(o => o.username)).toEqual(['kim.both']);
   });
 
   test('owners refuses shares over 100%', async () => {
-    const m = await open([{ id: 'p', owners: [{ name: 'A', share: 70 }, { name: 'B', share: 40 }] }]);
-    expect(() => m.owners('p')).toThrow('110%');
+    const m = await open([{ id: '66-00001.000', shares: { 'pat.example': 70, 'sam.example': 40 } }]);
+    await expect(m.owners(ctx, '66-00001.000')).rejects.toThrow('110%');
+  });
+
+  test('no user source is no owners', async () => {
+    const m = new CondoUnitManager({ provider: await createProvider('json', dataPath), unitTypes: new Map() });
+    await m.initialize();
+    expect(await m.owners(ctx, '66-00001.000')).toEqual([]);
   });
 
   test('unit type and assessment come from the configured type', async () => {
@@ -92,7 +114,7 @@ describe('CondoUnitManager', () => {
 
   test('upsert and delete save through the provider and bump the cache once each', async () => {
     const m = await open();
-    await m.upsert({ id: '66-00004.000', unitType: 'A', owners: [] });
+    await m.upsert({ id: '66-00004.000', unitType: 'A' });
     expect(await m.delete('66-00001.000')).toBe(true);
     expect(await m.delete('nope')).toBe(false);
     expect(bumps).toBe(2);

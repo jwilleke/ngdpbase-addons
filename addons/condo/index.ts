@@ -16,9 +16,9 @@
  *
  * The exported `name` MUST equal `ngdpbase.slug` in package.json (#927).
  */
-import type { AddonHost } from '@jwilleke/ngdpbase-types';
+import type { ActorContext, AddonHost } from '@jwilleke/ngdpbase-types';
 import apiRoutes from './routes/api.js';
-import CondoUnitManager, { createProvider } from './managers/CondoUnitManager.js';
+import CondoUnitManager, { createProvider, type CondoUserRecord } from './managers/CondoUnitManager.js';
 import { unitTypesFrom } from './managers/unitTypes.js';
 import { lateChargesFrom } from './managers/lateCharges.js';
 import CondoUnitPlugin from './plugins/CondoUnitPlugin.js';
@@ -26,6 +26,9 @@ import CondoUnitPlugin from './plugins/CondoUnitPlugin.js';
 interface PluginManagerLike { registerPlugin(name: string, plugin: unknown): Promise<void> }
 interface ConfigurationManagerLike { resolveDataPath(p: string): string }
 interface CacheManagerLike { bump(topic: string): Promise<unknown> }
+interface UserManagerLike {
+  searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<CondoUserRecord[]>;
+}
 
 interface Engine {
   getManager<T = unknown>(name: string): T | null | undefined;
@@ -53,6 +56,8 @@ const CondoAddon = {
       provider: await createProvider(providerName, dataPath),
       unitTypes: unitTypesFrom(config['unit-types']),
       lateCharges: lateChargesFrom(config['late-charges']),
+      // Every user, inactive ones too: an owner whose account is off still owes.
+      users: async (ctx) => (await engine.getManager<UserManagerLike>('UserManager')?.searchUsers('', { limit: 0, activeOnly: false }, ctx)) ?? [],
       bump: () => engine.getManager<CacheManagerLike>('CacheManager')?.bump('CondoUnitManager') ?? Promise.resolve()
     });
     await units.initialize();

@@ -24,6 +24,24 @@ Units live in `units.json` under the data folder (`ngdpbase.addons.condo.dataPat
 `ngdpbase.addons.condo.provider` (default `json`). A unit's `id` is its county parcel; every other
 field it has is kept as given.
 
+## Owners and occupants
+
+Every owner and occupant is an ngdpbase user. Condo's extended fields on the user record say which
+units they belong to and how:
+
+```json
+{ "parcel": ["66-00001.000"], "condoUserType": ["owner"] }
+```
+
+- `parcel`: the parcel ids of their units; one person can own several.
+- `condoUserType`: `owner`, `occupant`, or both.
+
+`CondoUnitManager.owners(ctx, id)` returns the unit's owners, each with the share of the assessment
+they pay. `ctx` is the caller's: the person who asked, or a job's context with its reason; the users
+are read as that caller (`UserManager.searchUsers`), inactive accounts included. The unit holds the shares by username (`"shares": { "pat.example": 60 }`); owners without one
+split what is left evenly. Every owner gets the invoice. `occupants(ctx, id)` returns the people living
+there, who are never billed.
+
 ## Unit types
 
 Each unit's `unitType` names an entry in `ngdpbase.addons.condo.unit-types`, which carries the unit

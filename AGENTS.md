@@ -103,4 +103,4 @@ the others and of any one site. Add-ons and plans are listed in [README.md](READ
 - __Build and test an add-on:__ `cd addons/<slug> && npm install && npm test` (builds `.ts` to `.js` in
   place, then runs vitest).
 - __Run:__ `cd /Volumes/hd2A/test-instances/ngdpbase-addons-instance && ./server.sh restart`, then
-  check `data/logs/app.log` for `Add-on loaded: <slug>`. The site is <http://localhost:3004>.
+  check `data/logs/app.log` for `Add-on loaded: <slug>`. The site is <http://ngdpbase-addons.localhost:3004>.
