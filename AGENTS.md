@@ -80,8 +80,14 @@ Only committed files are linted: anything `.gitignore`d is generated or vendored
 linted instead.
 <!-- KIT:END -->
 
-# Repo Title
+# ngdpbase-addons
 
 ## Project Context
 
-<!-- What this repo is, how to build / run it, and the key decisions an agent must know. -->
+General-purpose [ngdpbase](https://github.com/jwilleke/ngdpbase) add-ons, each independent of
+the others and of any one site. Add-ons and plans are listed in [README.md](README.md).
+
+- `condo` — condominium unit registry; epic [#9](https://github.com/jwilleke/ngdpbase-addons/issues/9).
+  Replaces `fairways-gen2-website/addons/fairways`; The Fairways is the reference site.
+- Add-on rules: ngdpbase `docs/guides/addons-developer-guide.md` and the guides it links.
+- Repo tooling follows [mjs-project-template](https://github.com/jwilleke/mjs-project-template).
