@@ -1,9 +1,12 @@
 /**
  * register() against a stand-in engine and the host ngdpbase would build from
- * this add-on's own default-config.json. Nothing is written to disk.
+ * this add-on's own default-config.json. Data goes to a temporary folder that
+ * each test removes, and nothing else.
  */
-import { readFileSync } from 'node:fs';
-import { describe, expect, test } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { buildAddonHost, formatters } from '@jwilleke/ngdpbase-types/testing';
 import CondoAddon from '../index.js';
 import CondoUnitPlugin from '../plugins/CondoUnitPlugin.js';
@@ -28,13 +31,17 @@ function fakeEngine() {
 }
 
 describe('condo register()', () => {
+  let dataPath: string;
+  beforeEach(() => { dataPath = mkdtempSync(path.join(tmpdir(), 'condo-register-')); });
+  afterEach(() => { rmSync(dataPath, { recursive: true, force: true }); });
+
   test('name is the manifest slug', () => {
     expect(CondoAddon.name).toBe(pkg.ngdpbase.slug);
   });
 
   test('registers the manager, the plugin, the API and the capability', async () => {
     const engine = fakeEngine();
-    await CondoAddon.register(engine, {}, buildAddonHost('condo', defaults));
+    await CondoAddon.register(engine, { dataPath }, buildAddonHost('condo', defaults));
     expect(engine.managers.get('CondoUnitManager')).toBeDefined();
     expect(engine.plugins.get('CondoUnit')).toBe(CondoUnitPlugin);
     expect(engine.mounts).toEqual(['/api/condo']);
