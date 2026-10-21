@@ -70,7 +70,6 @@ last_updated: "2026-10-21"
 <!-- Issues and PRs with no resolvable placement. `/pstatus` labels untriaged issues `needs-triage`; -->
 <!-- an open PR lands here when it has neither a placement label nor a linked issue to inherit from. -->
 
-- [#4](https://github.com/jwilleke/ngdpbase-addons/issues/4) condo: CondoUnitManager with JSON storage and backup
 - [#5](https://github.com/jwilleke/ngdpbase-addons/issues/5) condo: permissions and audit events
 - [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6) condo: API and admin routes and view
 - [#7](https://github.com/jwilleke/ngdpbase-addons/issues/7) condo: `[{CondoUnit}]` plugin
