@@ -12,4 +12,5 @@ others and of any one site.
 
 ## Plans
 
+- [Condo add-on — brainstorm notes](docs/plans/condo-brainstorm.md)
 - [Request-response engine — brainstorm notes](docs/plans/request-response-brainstorm.md)
