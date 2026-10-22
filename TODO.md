@@ -66,7 +66,7 @@ last_updated: "2026-10-21"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-- [#15](https://github.com/jwilleke/ngdpbase-addons/issues/15) condo: dated owner and occupant links on the user record (history)
+*None.*
 
 ## ⏸ Deferred
 
