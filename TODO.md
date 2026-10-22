@@ -59,7 +59,7 @@ last_updated: "2026-10-21"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-- [#5](https://github.com/jwilleke/ngdpbase-addons/issues/5) condo: permissions and audit events
+*None.*
 
 ## ⏸ Deferred
 
