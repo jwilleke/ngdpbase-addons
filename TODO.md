@@ -48,7 +48,11 @@ last_updated: "2026-10-21"
 
 ## 🟠 P1
 
-*None.*
+- [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6) condo: API and admin routes and view
+- [#7](https://github.com/jwilleke/ngdpbase-addons/issues/7) condo: `[{CondoUnit}]` plugin
+- [#8](https://github.com/jwilleke/ngdpbase-addons/issues/8) condo: directory CSV import with column map
+- [#12](https://github.com/jwilleke/ngdpbase-addons/issues/12) condo: set condoUserType and parcel from The Fairways' type
+- [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) condo: drop its own backup code once BackupManager backs up add-on dataPaths
 
 ## 🟡 P2
 
@@ -70,11 +74,7 @@ last_updated: "2026-10-21"
 <!-- Issues and PRs with no resolvable placement. `/pstatus` labels untriaged issues `needs-triage`; -->
 <!-- an open PR lands here when it has neither a placement label nor a linked issue to inherit from. -->
 
-- [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6) condo: API and admin routes and view
-- [#7](https://github.com/jwilleke/ngdpbase-addons/issues/7) condo: `[{CondoUnit}]` plugin
-- [#8](https://github.com/jwilleke/ngdpbase-addons/issues/8) condo: directory CSV import with column map
-- [#12](https://github.com/jwilleke/ngdpbase-addons/issues/12) condo: set condoUserType and parcel from The Fairways' type
-- [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) condo: drop its own backup code once BackupManager backs up add-on dataPaths
+*None.*
 
 <!-- KIT:END -->
 
