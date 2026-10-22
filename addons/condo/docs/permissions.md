@@ -62,7 +62,8 @@ what in its own `app-custom-config.json`, without touching condo.
   holder of `condo-review`.
 - __Implies:__ an owner sees their occupants' contact details. An occupant sees the owners' names.
 - __Recorded:__ each change made under it is recorded, and the reviewers get an advisory notice.
-- __Open:__ whether a billing address change applies at once or waits for review.
+- __Billing address:__ an owner's change applies at once, with an advisory notice to the Board of
+  Directors (operator, 2026-10-22).
 
 ### condo-review
 
