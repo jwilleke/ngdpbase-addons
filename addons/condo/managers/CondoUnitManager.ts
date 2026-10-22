@@ -56,34 +56,6 @@ export interface CondoUserRecord {
 
 export interface UnitAssessment { unitType: string; amount: number; period: UnitType['period']; datedue: UnitType['datedue'] }
 
-/** Core's BackupData (src/managers/BaseManager.ts). */
-export interface CondoBackupData {
-  managerName: string;
-  timestamp: string;
-  data?: unknown;
-  warnings?: string[];
-  [key: string]: unknown;
-}
-
-/** Core's ManagerBackupOptions: who asked, and where the backup document is written. */
-export interface CondoBackupOptions { ctx: ActorContext; directory: string; stem: string; safetyBackup?: boolean }
-
-/** Core's ManagerRestoreOptions: who asked, the backup directory, and the site restore it stages under. */
-export interface CondoRestoreOptions { ctx: ActorContext; directory: string; source?: string; replaceStaged?: boolean; safetyBackup?: string; siteRestore?: string }
-
-/**
- * Core's directory-backup helpers (src/utils/directoryBackup.ts), the ones the
- * forms, calendar and feeds managers use. They reach condo through `host`, not
- * an import of core's files (addons guide). Interim: BackupManager will back up
- * add-on dataPaths itself (ngdpbase#1985), and then this goes
- * (https://github.com/jwilleke/ngdpbase-addons/issues/13).
- */
-export interface DirectoryBackupParts {
-  backupDirectoryPart(manager: string, part: string, folder: string | null, options?: CondoBackupOptions): Promise<CondoBackupData>;
-  stageDirectoryPart(manager: string, folder: string | null, backupData: CondoBackupData, options?: CondoRestoreOptions): Promise<void>;
-  applyDirectoryPartAtStart(manager: string, folder: string, configManager: unknown): unknown;
-}
-
 /**
  * A "no" from the decision point. Carries the permission and the decision so a
  * route can hand both to ApiContext.enforceDeny, which shapes the refusal.
@@ -112,12 +84,6 @@ export type Decide = (ctx: ActorContext, request: { action: string }) => Promise
 
 export interface CondoUnitManagerOptions {
   provider: CondoUnitProvider;
-  /** The folder the provider keeps its files in; backed up and restored as one part. */
-  dataPath: string;
-  /** Core's directory-backup helpers, from `host`; absent on a core that does not offer them. */
-  backupParts?: DirectoryBackupParts | null;
-  /** ngdpbase's ConfigurationManager, which finds the site restore at start. */
-  configManager?: unknown;
   unitTypes: Map<string, UnitType>;
   lateCharges?: LateChargeRule[];
   /** Every user record, active or not, read as the caller (UserManager.searchUsers); absent means no users. */
@@ -152,9 +118,6 @@ function asList(value: unknown): string[] {
 export default class CondoUnitManager {
   private units = new Map<string, CondoUnit>();
   private readonly provider: CondoUnitProvider;
-  private readonly dataPath: string;
-  private readonly backupParts: DirectoryBackupParts | null;
-  private readonly configManager: unknown;
   private readonly unitTypes: Map<string, UnitType>;
   private readonly lateChargeRules: LateChargeRule[];
   private readonly users: (ctx: ActorContext) => Promise<CondoUserRecord[]>;
@@ -165,9 +128,6 @@ export default class CondoUnitManager {
 
   constructor(options: CondoUnitManagerOptions) {
     this.provider = options.provider;
-    this.dataPath = options.dataPath;
-    this.backupParts = options.backupParts ?? null;
-    this.configManager = options.configManager;
     this.unitTypes = options.unitTypes;
     this.lateChargeRules = options.lateCharges ?? [];
     this.users = options.users ?? (() => Promise.resolve([]));
@@ -182,13 +142,11 @@ export default class CondoUnitManager {
   }
 
   /**
-   * Called once during register(). A site restore staged for this folder is
-   * put in place first, before anything reads it (backup and restore guide).
+   * Called once during register(). ngdpbase backs up the add-on's dataPath and
+   * puts a staged restore of it in place before register() runs (#1985), so
+   * the units read here are already the restored ones.
    */
   async initialize(): Promise<void> {
-    if (this.backupParts && this.configManager) {
-      this.backupParts.applyDirectoryPartAtStart('CondoUnitManager', this.dataPath, this.configManager);
-    }
     await this.provider.initialize();
     this.units = new Map((await this.provider.loadUnits()).map(u => [u.id, u]));
   }
@@ -270,31 +228,6 @@ export default class CondoUnitManager {
    */
   lateCharges(): LateChargeRule[] {
     return this.lateChargeRules.map(r => ({ ...r }));
-  }
-
-  /**
-   * This manager's part of a site backup (BaseManager.backup): the data folder,
-   * archived beside the backup document as `<stem>.condo.tar`, encrypted under
-   * the backup key. Throws when this core cannot back it up, so the backup is
-   * reported incomplete rather than silently missing the units.
-   */
-  async backup(options?: CondoBackupOptions): Promise<CondoBackupData> {
-    if (!this.backupParts) throw new Error('CondoUnitManager: this ngdpbase does not hand add-ons the directory-backup helpers, so condo units are not in this backup');
-    return this.backupParts.backupDirectoryPart('CondoUnitManager', 'condo', this.dataPath, options);
-  }
-
-  /**
-   * BaseManager.restore: stages the folder from a backup for the next start,
-   * with the rest of the site restore; nothing in the running site changes.
-   */
-  async restore(backupData: CondoBackupData, options?: CondoRestoreOptions): Promise<void> {
-    if (!this.backupParts) throw new Error('CondoUnitManager: this ngdpbase does not hand add-ons the directory-backup helpers; nothing was staged');
-    await this.backupParts.stageDirectoryPart('CondoUnitManager', this.dataPath, backupData, options);
-  }
-
-  /** BaseManager.restoreIsStaged: condo's restore waits for the next start. */
-  restoreIsStaged(): boolean {
-    return true;
   }
 
   /** Adds the unit, or replaces the one with its id. Needs condo-manage; recorded first. */

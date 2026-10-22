@@ -24,6 +24,10 @@ Units live in `units.json` under the data folder (`ngdpbase.addons.condo.dataPat
 `ngdpbase.addons.condo.provider` (default `json`). A unit's `id` is its county parcel; every other
 field it has is kept as given.
 
+ngdpbase backs up and restores the data folder itself (ngdpbase#1985): every site backup holds it as
+`<stem>.condo.tar`, and a whole-site restore puts it back before condo starts. Condo has no backup
+code of its own.
+
 ## Owners and occupants
 
 Every owner and occupant is an ngdpbase user. Condo's extended fields on the user record say which

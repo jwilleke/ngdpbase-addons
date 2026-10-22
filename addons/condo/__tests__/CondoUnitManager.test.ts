@@ -8,7 +8,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { ActorContext } from '@jwilleke/ngdpbase-types';
 import { buildAddonHost } from '@jwilleke/ngdpbase-types/testing';
-import CondoUnitManager, { createProvider, CondoRefusedError, type CondoAuditRecord, type DirectoryBackupParts } from '../managers/CondoUnitManager.js';
+import CondoUnitManager, { createProvider, CondoRefusedError, type CondoAuditRecord } from '../managers/CondoUnitManager.js';
 import { unitTypesFrom } from '../managers/unitTypes.js';
 import { lateChargesFrom } from '../managers/lateCharges.js';
 import { FAIRWAYS_LATE_CHARGES, FAIRWAYS_UNIT_TYPES, SAMPLE_UNITS, SAMPLE_USERS } from './fixtures.js';
@@ -48,7 +48,6 @@ describe('CondoUnitManager', () => {
     writeFileSync(path.join(dataPath, 'units.json'), JSON.stringify(units));
     const manager = new CondoUnitManager({
       ...wiring(),
-      dataPath,
       provider: await createProvider('json', dataPath),
       unitTypes: unitTypesFrom(FAIRWAYS_UNIT_TYPES),
       lateCharges: lateChargesFrom(FAIRWAYS_LATE_CHARGES),
@@ -77,7 +76,7 @@ describe('CondoUnitManager', () => {
 
   test('no file yet is no units, and the folder is made', async () => {
     const sub = path.join(dataPath, 'new');
-    const m = new CondoUnitManager({ ...wiring(), dataPath: sub, provider: await createProvider('json', sub), unitTypes: new Map() });
+    const m = new CondoUnitManager({ ...wiring(), provider: await createProvider('json', sub), unitTypes: new Map() });
     await m.initialize();
     expect(m.count()).toBe(0);
   });
@@ -121,7 +120,7 @@ describe('CondoUnitManager', () => {
   });
 
   test('no user source is no owners', async () => {
-    const m = new CondoUnitManager({ ...wiring(), dataPath, provider: await createProvider('json', dataPath), unitTypes: new Map() });
+    const m = new CondoUnitManager({ ...wiring(), provider: await createProvider('json', dataPath), unitTypes: new Map() });
     await m.initialize();
     expect(await m.owners(ctx, '66-00001.000')).toEqual([]);
   });
@@ -150,50 +149,6 @@ describe('CondoUnitManager', () => {
     expect(bumps).toBe(2);
     const saved = JSON.parse(readFileSync(path.join(dataPath, 'units.json'), 'utf8')) as { id: string }[];
     expect(saved.map(u => u.id).sort()).toEqual(['66-00002.000', '66-00003.000', '66-00004.000']);
-  });
-
-  test('backup and restore go through core\'s directory helpers, and the restore is staged', async () => {
-    const calls: unknown[][] = [];
-    const parts: DirectoryBackupParts = {
-      backupDirectoryPart: async (...a) => { calls.push(['backup', ...a]); return { managerName: 'CondoUnitManager', timestamp: 't', data: { format: 1, archive: 's.condo.tar' } }; },
-      stageDirectoryPart: async (...a) => { calls.push(['stage', ...a]); },
-      applyDirectoryPartAtStart: (...a) => { calls.push(['apply', ...a]); return null; }
-    };
-    const configManager = {};
-    writeFileSync(path.join(dataPath, 'units.json'), JSON.stringify(SAMPLE_UNITS));
-    const m = new CondoUnitManager({ ...wiring(), dataPath, backupParts: parts, configManager, provider: await createProvider('json', dataPath), unitTypes: new Map() });
-    await m.initialize();
-    const opts = { ctx, directory: '/backups', stem: 's' };
-    const backup = await m.backup(opts);
-    await m.restore(backup, { ctx, directory: '/backups', siteRestore: '/site-restore.json' });
-    expect(m.restoreIsStaged()).toBe(true);
-    expect(calls).toEqual([
-      ['apply', 'CondoUnitManager', dataPath, configManager],
-      ['backup', 'CondoUnitManager', 'condo', dataPath, opts],
-      ['stage', 'CondoUnitManager', dataPath, backup, { ctx, directory: '/backups', siteRestore: '/site-restore.json' }]
-    ]);
-    expect(m.count()).toBe(3); // the restore staged; nothing in the running site changed
-  });
-
-  test('a staged restore is put in place before the units are read', async () => {
-    // Sabotage check: with apply moved after provider.loadUnits(), this test went red (2026-10-22).
-    writeFileSync(path.join(dataPath, 'units.json'), JSON.stringify(SAMPLE_UNITS));
-    const parts: DirectoryBackupParts = {
-      backupDirectoryPart: async () => { throw new Error('unused'); },
-      stageDirectoryPart: async () => { throw new Error('unused'); },
-      applyDirectoryPartAtStart: () => { writeFileSync(path.join(dataPath, 'units.json'), JSON.stringify([{ id: 'restored' }])); return null; }
-    };
-    const m = new CondoUnitManager({ ...wiring(), dataPath, backupParts: parts, configManager: {}, provider: await createProvider('json', dataPath), unitTypes: new Map() });
-    await m.initialize();
-    expect(m.list().map(u => u.id)).toEqual(['restored']);
-  });
-
-  test('on a core without the helpers, backup throws (reported incomplete) and restore refuses', async () => {
-    const m = await open();
-    expect(m.restoreIsStaged()).toBe(true);
-    await expect(m.backup({ ctx, directory: '/b', stem: 's' })).rejects.toThrow('condo units are not in this backup');
-    await expect(m.restore({ managerName: 'CondoUnitManager', timestamp: 't' }, { ctx, directory: '/b' })).rejects.toThrow('nothing was staged');
-    expect(m.count()).toBe(3);
   });
 
   test('a change is recorded as condo-manage, by the caller, with field names only', async () => {
