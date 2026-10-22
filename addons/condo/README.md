@@ -30,21 +30,27 @@ code of its own.
 
 ## Owners and occupants
 
-Every owner and occupant is an ngdpbase user. Condo's extended fields on the user record say which
-units they belong to and how:
+Every owner and occupant is an ngdpbase user. Condo's extended field on the user record,
+`condoUnits`, holds dated links to their units:
 
 ```json
-{ "parcel": ["66-00001.000"], "condoUserType": ["owner"] }
+"condoUnits": [
+  { "parcel": "66-00001.000", "type": "owner", "from": "2012-05-01", "to": "2020-08-31" },
+  { "parcel": "66-00002.000", "type": "occupant", "from": "2021-01-15", "to": "current" }
+]
 ```
 
-- `parcel`: the parcel ids of their units; one person can own several.
-- `condoUserType`: `owner`, `occupant`, or both.
+- `type`: `owner` or `occupant`; an owner who lives in the unit has one link of each.
+- `from`: an ISO date. `to`: an ISO date, or `"current"`. Both days count.
+- A link that is not exactly this shape is left out and listed by `ResidencyManager.linkProblems(ctx)`,
+  never guessed.
 
-`CondoUnitManager.owners(ctx, id)` returns the unit's owners, each with the share of the assessment
-they pay. `ctx` is the caller's: the person who asked, or a job's context with its reason; the users
-are read as that caller (`UserManager.searchUsers`), inactive accounts included. The unit holds the shares by username (`"shares": { "pat.example": 60 }`); owners without one
-split what is left evenly. Every owner gets the invoice. `occupants(ctx, id)` returns the people living
-there, who are never billed.
+`ResidencyManager.owners(ctx, id)` returns the unit's owners today (or on `{ on: 'YYYY-MM-DD' }`),
+each with the share of the assessment they pay. `ctx` is the caller's: the person who asked, or a
+job's context with its reason; users are read as that caller (`UserManager.searchUsers`), inactive
+accounts included. The unit holds the shares by username (`"shares": { "pat.example": 60 }`); owners
+without one split what is left evenly. `occupants(ctx, id)` returns the people living there, who are
+never billed. `history(ctx, id)` returns everyone the unit has had, with their dates.
 
 ## Unit types
 

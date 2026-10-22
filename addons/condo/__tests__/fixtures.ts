@@ -31,11 +31,25 @@ export const SAMPLE_UNITS: CondoUnit[] = [
   { id: '66-00003.000', streetNo: '105', streetName: 'Sample', streetType: 'Dr', unitType: 'Z' }
 ];
 
-/** Users as UserManager.getUsers() gives them, with condo's extended fields. */
+/** "Today" in the tests, so which links are current never depends on the day the tests run. */
+export const TEST_TODAY = '2026-10-22';
+
+/** Users as UserManager.searchUsers() gives them, with condo's dated links (#15). */
 export const SAMPLE_USERS: CondoUserRecord[] = [
-  { username: 'pat.example', displayName: 'Pat Example', email: 'pat@example.org', parcel: ['66-00001.000'], condoUserType: ['owner'] },
-  { username: 'sam.example', displayName: 'Sam Example', parcel: ['66-00001.000', '66-00002.000'], condoUserType: ['owner'] },
-  { username: 'lee.renter', displayName: 'Lee Renter', parcel: ['66-00001.000'], condoUserType: ['occupant'] },
-  { username: 'kim.both', parcel: '66-00002.000', condoUserType: ['owner', 'occupant'] },
+  { username: 'pat.example', displayName: 'Pat Example', email: 'pat@example.org',
+    condoUnits: [{ parcel: '66-00001.000', type: 'owner', from: '2015-06-01', to: 'current' }] },
+  { username: 'sam.example', displayName: 'Sam Example', condoUnits: [
+    { parcel: '66-00001.000', type: 'owner', from: '2015-06-01', to: 'current' },
+    { parcel: '66-00002.000', type: 'owner', from: '2020-03-01', to: 'current' }] },
+  { username: 'lee.renter', displayName: 'Lee Renter',
+    condoUnits: [{ parcel: '66-00001.000', type: 'occupant', from: '2023-02-01', to: 'current' }] },
+  { username: 'kim.both', condoUnits: [
+    { parcel: '66-00002.000', type: 'owner', from: '2020-03-01', to: 'current' },
+    { parcel: '66-00002.000', type: 'occupant', from: '2020-03-15', to: 'current' }] },
+  { username: 'old.owner', displayName: 'Old Owner',
+    condoUnits: [{ parcel: '66-00001.000', type: 'owner', from: '2008-01-10', to: '2015-05-31' }] },
+  { username: 'moving.in', displayName: 'Moving In',
+    condoUnits: [{ parcel: '66-00001.000', type: 'occupant', from: '2026-11-01', to: 'current' }] },
+  { username: 'broken.links', condoUnits: [{ parcel: '66-00001.000', type: 'owner', from: '2020-01-01', to: null }] },
   { username: 'admin', displayName: 'Administrator' }
 ];

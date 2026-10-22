@@ -39,10 +39,11 @@ describe('condo register()', () => {
     expect(CondoAddon.name).toBe(pkg.ngdpbase.slug);
   });
 
-  test('registers the manager, the plugin, the API and the capability', async () => {
+  test('registers the managers, the plugin, the API and the capability', async () => {
     const engine = fakeEngine();
     await CondoAddon.register(engine, { dataPath }, buildAddonHost('condo', defaults));
     expect(engine.managers.get('CondoUnitManager')).toBeDefined();
+    expect(engine.managers.get('ResidencyManager')).toBeDefined();
     expect(engine.plugins.get('CondoUnit')).toBe(CondoUnitPlugin);
     expect(engine.mounts).toEqual(['/api/condo']);
     expect(engine.capabilities).toEqual({ condo: true });

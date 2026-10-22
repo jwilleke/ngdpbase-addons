@@ -11,7 +11,7 @@ import { buildAddonHost } from '@jwilleke/ngdpbase-types/testing';
 import CondoUnitManager, { createProvider, CondoRefusedError, type CondoAuditRecord } from '../managers/CondoUnitManager.js';
 import { unitTypesFrom } from '../managers/unitTypes.js';
 import { lateChargesFrom } from '../managers/lateCharges.js';
-import { FAIRWAYS_LATE_CHARGES, FAIRWAYS_UNIT_TYPES, SAMPLE_UNITS, SAMPLE_USERS } from './fixtures.js';
+import { FAIRWAYS_LATE_CHARGES, FAIRWAYS_UNIT_TYPES, SAMPLE_UNITS } from './fixtures.js';
 
 const defaults = JSON.parse(readFileSync(new URL('../config/default-config.json', import.meta.url), 'utf8')) as Record<string, unknown>;
 const host = buildAddonHost('condo', defaults);
@@ -27,7 +27,6 @@ function contextFor(username: string): ActorContext {
 describe('CondoUnitManager', () => {
   let dataPath: string;
   let bumps: number;
-  let asked: unknown[];
   let audits: CondoAuditRecord[];
   let auditFails: boolean;
   const treasurer = contextFor('treasurer');
@@ -51,7 +50,6 @@ describe('CondoUnitManager', () => {
       provider: await createProvider('json', dataPath),
       unitTypes: unitTypesFrom(FAIRWAYS_UNIT_TYPES),
       lateCharges: lateChargesFrom(FAIRWAYS_LATE_CHARGES),
-      users: async (ctx) => { asked.push(ctx); return SAMPLE_USERS; },
       bump: async () => { bumps++; }
     });
     await manager.initialize();
@@ -61,7 +59,6 @@ describe('CondoUnitManager', () => {
   beforeEach(() => {
     dataPath = mkdtempSync(path.join(tmpdir(), 'condo-units-'));
     bumps = 0;
-    asked = [];
     audits = [];
     auditFails = false;
   });
@@ -91,38 +88,6 @@ describe('CondoUnitManager', () => {
     expect(m.search('mount vernon').map(u => u.id)).toEqual(['66-00001.000']);
     expect(m.search('105').map(u => u.id)).toEqual(['66-00003.000']);
     expect(m.search('').length).toBe(3);
-  });
-
-  test('owners come from the user records: given shares kept, the rest split evenly', async () => {
-    const m = await open();
-    expect(await m.owners(ctx, '66-00001.000')).toEqual([
-      { username: 'pat.example', name: 'Pat Example', email: 'pat@example.org', share: 60 },
-      { username: 'sam.example', name: 'Sam Example', email: null, share: 40 }
-    ]);
-    // sam.example owns two units; a single parcel string still reads; no displayName falls back to the username
-    expect(await m.owners(ctx, '66-00002.000')).toEqual([
-      { username: 'kim.both', name: 'kim.both', email: null, share: 50 },
-      { username: 'sam.example', name: 'Sam Example', email: null, share: 50 }
-    ]);
-    expect(await m.owners(ctx, '66-00003.000')).toEqual([]);
-    expect(asked.every(c => c === ctx)).toBe(true); // users are read as the caller
-  });
-
-  test('occupants are the users marked occupant, never billed', async () => {
-    const m = await open();
-    expect((await m.occupants(ctx, '66-00001.000')).map(o => o.username)).toEqual(['lee.renter']);
-    expect((await m.occupants(ctx, '66-00002.000')).map(o => o.username)).toEqual(['kim.both']);
-  });
-
-  test('owners refuses shares over 100%', async () => {
-    const m = await open([{ id: '66-00001.000', shares: { 'pat.example': 70, 'sam.example': 40 } }]);
-    await expect(m.owners(ctx, '66-00001.000')).rejects.toThrow('110%');
-  });
-
-  test('no user source is no owners', async () => {
-    const m = new CondoUnitManager({ ...wiring(), provider: await createProvider('json', dataPath), unitTypes: new Map() });
-    await m.initialize();
-    expect(await m.owners(ctx, '66-00001.000')).toEqual([]);
   });
 
   test('unit type and assessment come from the configured type', async () => {

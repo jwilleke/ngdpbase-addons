@@ -3,7 +3,7 @@
  * and their owners (epic https://github.com/jwilleke/ngdpbase-addons/issues/9).
  * The Fairways Condominiums is the reference site.
  *
- * register() registers CondoUnitManager and the [{CondoUnit}] plugin, mounts
+ * register() registers CondoUnitManager, ResidencyManager and the [{CondoUnit}] plugin, mounts
  * the API at /api/condo, and sets the `condo` capability.
  *
  * Configuration keys:
@@ -20,7 +20,8 @@
 import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types';
 import apiRoutes from './routes/api.js';
 import path from 'node:path';
-import CondoUnitManager, { createProvider, type CondoUserRecord } from './managers/CondoUnitManager.js';
+import CondoUnitManager, { createProvider } from './managers/CondoUnitManager.js';
+import ResidencyManager, { type CondoUserRecord } from './managers/ResidencyManager.js';
 import { unitTypesFrom } from './managers/unitTypes.js';
 import { lateChargesFrom } from './managers/lateCharges.js';
 import CondoUnitPlugin from './plugins/CondoUnitPlugin.js';
@@ -68,12 +69,17 @@ const CondoAddon = {
       provider: await createProvider(providerName, dataPath),
       unitTypes: unitTypesFrom(config['unit-types']),
       lateCharges: lateChargesFrom(config['late-charges']),
-      // Every user, inactive ones too: an owner whose account is off still owes.
-      users: async (ctx) => (await engine.getManager<UserManagerLike>('UserManager')?.searchUsers('', { limit: 0, activeOnly: false }, ctx)) ?? [],
       bump: () => engine.getManager<CacheManagerLike>('CacheManager')?.bump('CondoUnitManager') ?? Promise.resolve()
     });
     await units.initialize();
     engine.registerManager('CondoUnitManager', units);
+
+    const unitManager = units;
+    engine.registerManager('ResidencyManager', new ResidencyManager({
+      // Every user, inactive ones too: an owner whose account is off still owes.
+      users: async (ctx) => (await engine.getManager<UserManagerLike>('UserManager')?.searchUsers('', { limit: 0, activeOnly: false }, ctx)) ?? [],
+      unit: (id) => unitManager.get(id)
+    }));
     host.logger.info(`[condo] Units from provider '${units.providerName}': ${units.count()}`);
 
     await engine.getManager<PluginManagerLike>('PluginManager')?.registerPlugin('CondoUnit', CondoUnitPlugin);
