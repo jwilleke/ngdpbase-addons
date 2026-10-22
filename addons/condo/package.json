@@ -36,8 +36,10 @@
     "routes/*.js",
     "plugins/*.js",
     "providers/*.js",
+    "forms/*.js",
     "config/",
     "pages/",
+    "docs/",
     "README.md"
   ]
 }
