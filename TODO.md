@@ -54,7 +54,6 @@ last_updated: "2026-10-21"
 - [#12](https://github.com/jwilleke/ngdpbase-addons/issues/12) condo: set condoUserType and parcel from The Fairways' type
 - [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) condo: drop its own backup code once BackupManager backs up add-on dataPaths
 - [#14](https://github.com/jwilleke/ngdpbase-addons/issues/14) condo: billing parties on the unit, one invoice per billing address
-- [#15](https://github.com/jwilleke/ngdpbase-addons/issues/15) condo: dated owner and occupant links on the user record (history)
 - [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) condo: resident self-service: see your own unit, update your own details
 - [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) condo: Occupancy information form (ORC 5311.09)
 
@@ -67,7 +66,7 @@ last_updated: "2026-10-21"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#15](https://github.com/jwilleke/ngdpbase-addons/issues/15) condo: dated owner and occupant links on the user record (history)
 
 ## ⏸ Deferred
 
