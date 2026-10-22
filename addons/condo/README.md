@@ -83,6 +83,18 @@ invoice line, and the treasurer confirms it. The Fairways', as an example:
 A rule has an `amount`, an `annual-percent`, or both. A malformed rule stops the add-on loading and
 names the key.
 
+## Permissions and audit
+
+| Permission | Lets a person | Day one |
+| --- | --- | --- |
+| `condo-read` | see units, owners and occupants, and assessments | admin |
+| `condo-manage` | change units | admin |
+
+A site grants either to its board or treasurer in its own `ngdpbase.access.policies`. Changes are
+checked by `CondoUnitManager` itself; reads where a person asks (routes, plugin). Every change is
+recorded as the audit event `condo-manage` (unit, action, the field names changed, never their
+values) before it is made: if the record cannot be written, the change does not happen.
+
 ## Develop
 
 ```bash

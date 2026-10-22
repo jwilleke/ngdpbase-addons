@@ -4,19 +4,33 @@
   "ngdpbase.addons.condo.provider": "json",
   "ngdpbase.addons.condo.unit-types": {},
   "ngdpbase.addons.condo.late-charges": {},
+  "ngdpbase.config.sensitive-values": {
+    "ngdpbase.addons.condo.dataPath": "sensitive"
+  },
   "ngdpbase.permissions.definitions": {
+    "condo-read": {
+      "description": "See condo units, their owners and occupants, and assessments",
+      "label": "See condo units",
+      "icon": "building",
+      "color": "#6c757d"
+    },
     "condo-manage": {
       "description": "Manage the condo add-on: units, owners and the directory import",
       "label": "Manage condo units",
       "icon": "building",
-      "color": "#0d6efd"
+      "color": "#0d6efd",
+      "audit": {
+        "on-failure": "refuse",
+        "enabled": true,
+        "description": "Condo unit changed"
+      }
     }
   },
   "ngdpbase.access.policies": [
     {
-      "id": "condo-manage-access",
-      "name": "Condo management",
-      "description": "Who may manage condo units",
+      "id": "condo-admin-access",
+      "name": "Condo administration",
+      "description": "Admins see and manage condo units. A site grants condo-read or condo-manage to its board or treasurer in its own policy.",
       "priority": 90,
       "effect": "allow",
       "subjects": [
@@ -32,6 +46,7 @@
         }
       ],
       "actions": [
+        "condo-read",
         "condo-manage"
       ]
     }

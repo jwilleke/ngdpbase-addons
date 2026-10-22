@@ -19,8 +19,19 @@
  *
  * Every write goes through write(), which saves and then bumps the
  * 'CondoUnitManager' cache topic, so pages showing units re-render.
+ *
+ * The manager is the enforcement point for changes to units
+ * (https://github.com/jwilleke/ngdpbase-addons/issues/5): upsert and delete ask
+ * the decision point for `condo-manage` with the caller's context, throw a
+ * CondoRefusedError carrying the decision on a "no" (a route hands it to
+ * ApiContext.enforceDeny, as core's contact doors do), and record
+ * `condo-manage` before they change anything (on-failure refuse: no record, no
+ * change). Reads are checked where a person asks, the routes and the plugin.
+ *
+ * Every door takes the context it was given, positionally (ngdpbase security
+ * guide): a person's subject, or a job's JobContext with its reason.
  */
-import type { ActorContext } from '@jwilleke/ngdpbase-types';
+import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types';
 import type { CondoUnit, CondoUnitProvider } from '../providers/CondoUnitProvider.js';
 import type { UnitType } from './unitTypes.js';
 import type { LateChargeRule } from './lateCharges.js';
@@ -45,21 +56,78 @@ export interface CondoUserRecord {
 
 export interface UnitAssessment { unitType: string; amount: number; period: UnitType['period']; datedue: UnitType['datedue'] }
 
-/** Core's BackupData (src/managers/BaseManager.ts), as this manager fills it. */
+/** Core's BackupData (src/managers/BaseManager.ts). */
 export interface CondoBackupData {
   managerName: string;
   timestamp: string;
-  providerClass?: string | null;
   data?: unknown;
+  warnings?: string[];
   [key: string]: unknown;
 }
 
+/** Core's ManagerBackupOptions: who asked, and where the backup document is written. */
+export interface CondoBackupOptions { ctx: ActorContext; directory: string; stem: string; safetyBackup?: boolean }
+
+/** Core's ManagerRestoreOptions: who asked, the backup directory, and the site restore it stages under. */
+export interface CondoRestoreOptions { ctx: ActorContext; directory: string; source?: string; replaceStaged?: boolean; safetyBackup?: string; siteRestore?: string }
+
+/**
+ * Core's directory-backup helpers (src/utils/directoryBackup.ts), the ones the
+ * forms, calendar and feeds managers use. They reach condo through `host`, not
+ * an import of core's files (addons guide). Interim: BackupManager will back up
+ * add-on dataPaths itself (ngdpbase#1985), and then this goes
+ * (https://github.com/jwilleke/ngdpbase-addons/issues/13).
+ */
+export interface DirectoryBackupParts {
+  backupDirectoryPart(manager: string, part: string, folder: string | null, options?: CondoBackupOptions): Promise<CondoBackupData>;
+  stageDirectoryPart(manager: string, folder: string | null, backupData: CondoBackupData, options?: CondoRestoreOptions): Promise<void>;
+  applyDirectoryPartAtStart(manager: string, folder: string, configManager: unknown): unknown;
+}
+
+/**
+ * A "no" from the decision point. Carries the permission and the decision so a
+ * route can hand both to ApiContext.enforceDeny, which shapes the refusal.
+ */
+export class CondoRefusedError extends Error {
+  override readonly name = 'CondoRefusedError';
+  constructor(readonly permission: string, readonly decision: Decision) {
+    super(`refused: ${permission}`);
+  }
+}
+
+/** What the manager hands to the audit door; index.ts wraps ngdpbase's recordAuditEvent. */
+export interface CondoAuditRecord {
+  eventType: ReturnType<AddonHost['addonAuditEventName']>;
+  user: string;
+  actor?: string;
+  ipAddress: string | undefined;
+  action: string;
+  severity: 'low' | 'medium' | 'high';
+  resource: string;
+  resourceType: 'condo-unit';
+  metadata: Record<string, unknown>;
+}
+
+export type Decide = (ctx: ActorContext, request: { action: string }) => Promise<Decision>;
+
 export interface CondoUnitManagerOptions {
   provider: CondoUnitProvider;
+  /** The folder the provider keeps its files in; backed up and restored as one part. */
+  dataPath: string;
+  /** Core's directory-backup helpers, from `host`; absent on a core that does not offer them. */
+  backupParts?: DirectoryBackupParts | null;
+  /** ngdpbase's ConfigurationManager, which finds the site restore at start. */
+  configManager?: unknown;
   unitTypes: Map<string, UnitType>;
   lateCharges?: LateChargeRule[];
   /** Every user record, active or not, read as the caller (UserManager.searchUsers); absent means no users. */
   users?: (ctx: ActorContext) => Promise<CondoUserRecord[]>;
+  /** ngdpbase's decision point. */
+  decide: Decide;
+  /** ngdpbase's recordAuditEvent for this add-on; throws when a refuse event cannot be written. */
+  recordAudit: (record: CondoAuditRecord) => Promise<void>;
+  /** ngdpbase's host: actorOf and the audit event names. */
+  host: Pick<AddonHost, 'actorOf' | 'addonAuditEventName'>;
   /** CacheManager.bump for this manager's topic; absent in tests. */
   bump?: () => Promise<unknown>;
 }
@@ -84,25 +152,43 @@ function asList(value: unknown): string[] {
 export default class CondoUnitManager {
   private units = new Map<string, CondoUnit>();
   private readonly provider: CondoUnitProvider;
+  private readonly dataPath: string;
+  private readonly backupParts: DirectoryBackupParts | null;
+  private readonly configManager: unknown;
   private readonly unitTypes: Map<string, UnitType>;
   private readonly lateChargeRules: LateChargeRule[];
   private readonly users: (ctx: ActorContext) => Promise<CondoUserRecord[]>;
   private readonly bump: () => Promise<unknown>;
+  private readonly decide: Decide;
+  private readonly recordAudit: (record: CondoAuditRecord) => Promise<void>;
+  private readonly host: Pick<AddonHost, 'actorOf' | 'addonAuditEventName'>;
 
   constructor(options: CondoUnitManagerOptions) {
     this.provider = options.provider;
+    this.dataPath = options.dataPath;
+    this.backupParts = options.backupParts ?? null;
+    this.configManager = options.configManager;
     this.unitTypes = options.unitTypes;
     this.lateChargeRules = options.lateCharges ?? [];
     this.users = options.users ?? (() => Promise.resolve([]));
     this.bump = options.bump ?? (() => Promise.resolve());
+    this.decide = options.decide;
+    this.recordAudit = options.recordAudit;
+    this.host = options.host;
   }
 
   get providerName(): string {
     return this.provider.name;
   }
 
-  /** Called once during register(). */
+  /**
+   * Called once during register(). A site restore staged for this folder is
+   * put in place first, before anything reads it (backup and restore guide).
+   */
   async initialize(): Promise<void> {
+    if (this.backupParts && this.configManager) {
+      this.backupParts.applyDirectoryPartAtStart('CondoUnitManager', this.dataPath, this.configManager);
+    }
     await this.provider.initialize();
     this.units = new Map((await this.provider.loadUnits()).map(u => [u.id, u]));
   }
@@ -187,46 +273,69 @@ export default class CondoUnitManager {
   }
 
   /**
-   * This manager's part of a site backup: every unit, in the backup document.
-   * Same shape as core's BaseManager.backup() (add-ons cannot import BaseManager).
+   * This manager's part of a site backup (BaseManager.backup): the data folder,
+   * archived beside the backup document as `<stem>.condo.tar`, encrypted under
+   * the backup key. Throws when this core cannot back it up, so the backup is
+   * reported incomplete rather than silently missing the units.
    */
-  async backup(): Promise<CondoBackupData> {
-    return {
-      managerName: 'CondoUnitManager',
-      timestamp: new Date().toISOString(),
-      providerClass: this.provider.name,
-      data: { units: this.list() }
-    };
+  async backup(options?: CondoBackupOptions): Promise<CondoBackupData> {
+    if (!this.backupParts) throw new Error('CondoUnitManager: this ngdpbase does not hand add-ons the directory-backup helpers, so condo units are not in this backup');
+    return this.backupParts.backupDirectoryPart('CondoUnitManager', 'condo', this.dataPath, options);
   }
 
   /**
-   * Puts the units from a backup back, replacing every unit, through the one
-   * write path. A backup that is not this manager's, or holds no unit list, is
-   * refused and nothing changes.
+   * BaseManager.restore: stages the folder from a backup for the next start,
+   * with the rest of the site restore; nothing in the running site changes.
    */
-  async restore(backup: CondoBackupData): Promise<void> {
-    const units = (backup?.data as { units?: unknown } | null | undefined)?.units;
-    if (backup?.managerName !== 'CondoUnitManager' || !Array.isArray(units)) {
-      throw new Error('CondoUnitManager: not a condo units backup');
-    }
-    const bad = units.findIndex(u => !u || typeof u !== 'object' || typeof (u as { id?: unknown }).id !== 'string' || (u as { id: string }).id === '');
-    if (bad !== -1) throw new Error(`CondoUnitManager: backup unit ${bad} has no parcel id`);
-    await this.write(current => {
-      current.clear();
-      for (const u of units as CondoUnit[]) current.set(u.id, u);
-    });
+  async restore(backupData: CondoBackupData, options?: CondoRestoreOptions): Promise<void> {
+    if (!this.backupParts) throw new Error('CondoUnitManager: this ngdpbase does not hand add-ons the directory-backup helpers; nothing was staged');
+    await this.backupParts.stageDirectoryPart('CondoUnitManager', this.dataPath, backupData, options);
   }
 
-  /** Adds the unit, or replaces the one with its id. */
-  async upsert(unit: CondoUnit): Promise<void> {
+  /** BaseManager.restoreIsStaged: condo's restore waits for the next start. */
+  restoreIsStaged(): boolean {
+    return true;
+  }
+
+  /** Adds the unit, or replaces the one with its id. Needs condo-manage; recorded first. */
+  async upsert(ctx: ActorContext, unit: CondoUnit): Promise<void> {
     if (typeof unit.id !== 'string' || unit.id === '') throw new Error('unit.id (the parcel) is required');
+    await this.authorize(ctx, 'condo-manage');
+    const before = this.units.get(unit.id);
+    const fields = [...new Set([...Object.keys(before ?? {}), ...Object.keys(unit)])]
+      .filter(k => JSON.stringify(before?.[k]) !== JSON.stringify(unit[k]))
+      .sort();
+    await this.audit(ctx, before ? 'unit-update' : 'unit-create', unit.id, { fields });
     await this.write(units => units.set(unit.id, unit));
   }
 
-  async delete(id: string): Promise<boolean> {
+  /** Removes the unit. Needs condo-manage; recorded first. */
+  async delete(ctx: ActorContext, id: string): Promise<boolean> {
+    await this.authorize(ctx, 'condo-manage');
     if (!this.units.has(id)) return false;
+    await this.audit(ctx, 'unit-delete', id, {});
     await this.write(units => units.delete(id));
     return true;
+  }
+
+  /** Ask the decision point with the caller's context; a "no" throws CondoRefusedError. */
+  private async authorize(ctx: ActorContext, action: string): Promise<void> {
+    const decision = await this.decide(ctx, { action });
+    if (!decision.permit) throw new CondoRefusedError(action, decision);
+  }
+
+  /**
+   * Every audit record's one way out, as `condo-manage`. The "who" comes from
+   * the caller's context through ngdpbase's actorOf, never copied from a name.
+   */
+  private async audit(ctx: ActorContext, action: string, unitId: string, metadata: Record<string, unknown>): Promise<void> {
+    const { metadata: whoMetadata, ...who } = this.host.actorOf(ctx);
+    await this.recordAudit({
+      eventType: this.host.addonAuditEventName('condo-manage'),
+      ...who,
+      action, severity: 'medium', resource: unitId, resourceType: 'condo-unit',
+      metadata: { ...whoMetadata, ...metadata }
+    });
   }
 
   /** The one write path: change a copy, save it, keep it, then tell the page cache. */

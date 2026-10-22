@@ -23,7 +23,7 @@ export default function apiRoutes(engine: Engine, host: AddonHost): Router {
   router.get('/status', async (req: Request, res: Response) => {
     try {
       const ctx = ApiContext.from(req, engine as never);
-      await ctx.requirePermission('condo-manage');
+      await ctx.requirePermission('condo-read');
       const units = engine.getManager<CondoUnitManager>('CondoUnitManager');
       res.json({ ok: true, units: units?.count() ?? 0 });
     } catch (err) {

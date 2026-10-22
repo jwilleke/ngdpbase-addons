@@ -16,9 +16,9 @@
  *
  * The exported `name` MUST equal `ngdpbase.slug` in package.json (#927).
  */
-import type { ActorContext, AddonHost } from '@jwilleke/ngdpbase-types';
+import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types';
 import apiRoutes from './routes/api.js';
-import CondoUnitManager, { createProvider, type CondoUserRecord } from './managers/CondoUnitManager.js';
+import CondoUnitManager, { createProvider, type CondoUserRecord, type DirectoryBackupParts } from './managers/CondoUnitManager.js';
 import { unitTypesFrom } from './managers/unitTypes.js';
 import { lateChargesFrom } from './managers/lateCharges.js';
 import CondoUnitPlugin from './plugins/CondoUnitPlugin.js';
@@ -26,6 +26,7 @@ import CondoUnitPlugin from './plugins/CondoUnitPlugin.js';
 interface PluginManagerLike { registerPlugin(name: string, plugin: unknown): Promise<void> }
 interface ConfigurationManagerLike { resolveDataPath(p: string): string }
 interface CacheManagerLike { bump(topic: string): Promise<unknown> }
+interface PolicyDecisionPointLike { decide(subject: unknown, request: { action: string }): Promise<Decision> }
 interface UserManagerLike {
   searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<CondoUserRecord[]>;
 }
@@ -40,6 +41,14 @@ interface Engine {
 
 let units: CondoUnitManager | null = null;
 
+/** The three directory-backup helpers from host, or null on a core that does not offer them (interim, ngdpbase-addons#13). */
+function backupPartsFrom(host: AddonHost): DirectoryBackupParts | null {
+  const h = host as unknown as Partial<DirectoryBackupParts>;
+  return typeof h.backupDirectoryPart === 'function' && typeof h.stageDirectoryPart === 'function' && typeof h.applyDirectoryPartAtStart === 'function'
+    ? { backupDirectoryPart: h.backupDirectoryPart, stageDirectoryPart: h.stageDirectoryPart, applyDirectoryPartAtStart: h.applyDirectoryPartAtStart }
+    : null;
+}
+
 const CondoAddon = {
   name: 'condo',
   version: '0.1.0',
@@ -52,8 +61,19 @@ const CondoAddon = {
     const dataPath = engine.getManager<ConfigurationManagerLike>('ConfigurationManager')?.resolveDataPath(configured) ?? configured;
 
     const providerName = typeof config['provider'] === 'string' && config['provider'] !== '' ? config['provider'] : 'json';
+    const pdp = engine.getManager<PolicyDecisionPointLike>('PolicyDecisionPoint');
+    const auditSink = engine.getManager<Parameters<typeof host.recordAuditEvent>[0]>('AuditManager');
     units = new CondoUnitManager({
+      host,
+      // No decision point is a "no" (fail closed).
+      decide: async (subject, request) => pdp ? pdp.decide(subject, request) : { permit: false, applicable: false, reason: 'no_decision_point' } as Decision,
+      // condo-manage is a refuse event: a record that cannot be written throws here, and the change stops.
+      recordAudit: async (record) => { await host.recordAuditEvent(auditSink, { ...record, result: 'success' } as never); },
       provider: await createProvider(providerName, dataPath),
+      dataPath,
+      // Core's directory-backup helpers, interim until ngdpbase#1985 (ngdpbase-addons#13).
+      backupParts: backupPartsFrom(host),
+      configManager: engine.getManager('ConfigurationManager'),
       unitTypes: unitTypesFrom(config['unit-types']),
       lateCharges: lateChargesFrom(config['late-charges']),
       // Every user, inactive ones too: an owner whose account is off still owes.
