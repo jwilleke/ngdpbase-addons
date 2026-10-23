@@ -42,7 +42,7 @@ interface RoleManagerLike {
 interface BackgroundJobManagerLike {
   registerJob(def: {
     id: string; displayName: string; schedule: string; catchUp: 'latest';
-    run(reportProgress: (message: string) => void, ctx: ActorContext): Promise<{ success: boolean; summary?: string }>;
+    run(reportProgress: (message: string) => void, ctx: ActorContext): Promise<{ success: boolean; summary?: string; error?: string }>;
   }): void;
 }
 interface UserManagerLike {
@@ -117,10 +117,13 @@ const AccommodationAddon = {
         schedule: 'daily 00:05',
         catchUp: 'latest',
         run: async (reportProgress, ctx) => {
-          const { assigned, removed, leftAlone } = await residencyManager.reconcileRoles(ctx, roles);
+          const { assigned, removed, leftAlone, failed } = await residencyManager.reconcileRoles(ctx, roles);
           const summary = `${assigned.length} role(s) assigned, ${removed.length} removed, ${leftAlone.length} left alone (unreadable entries)`;
           reportProgress(summary);
-          return { success: true, summary };
+          if (failed.length === 0) return { success: true, summary };
+          // A refused change fails the run, so the job manager retries it, audits it and tells the admins.
+          const refused = failed.map(f => `${f.change} ${f.role} for ${f.username}: ${f.error}`).join('; ');
+          return { success: false, summary, error: `${failed.length} role change(s) refused: ${refused}` };
         }
       });
     } else {

@@ -47,11 +47,15 @@ export interface RoleDoor {
   remove(username: string, role: LinkType, ctx: ActorContext): Promise<void>;
 }
 
-/** What one reconcile changed, and the people it left alone because their entries could not be read. */
+/**
+ * What one reconcile changed, the people it left alone because their entries could not be
+ * read, and every change RoleManager refused, with its error.
+ */
 export interface RoleReconcileResult {
   assigned: Array<{ username: string; role: LinkType }>;
   removed: Array<{ username: string; role: LinkType }>;
   leftAlone: Array<{ username: string; role: LinkType }>;
+  failed: Array<{ username: string; role: LinkType; change: 'assign' | 'remove'; error: string }>;
 }
 
 export interface ResidencyManagerOptions {
@@ -176,11 +180,13 @@ export default class ResidencyManager {
    * their occupancy entries is; otherwise they lose it. A role is never taken away while
    * any of that person's entries for it cannot be read: it is left as it is, never guessed
    * (linkProblems names the entry).
-   * Each change goes through `roles` as the caller, which records it.
+   * Each change goes through `roles` as the caller, which records it. A change RoleManager
+   * refuses (it throws on any failure, ngdpbase#2015) is listed in `failed` with its error,
+   * and the rest still run, so one person's problem never holds up everyone else's roles.
    */
   async reconcileRoles(ctx: ActorContext, roles: RoleDoor): Promise<RoleReconcileResult> {
     const today = this.today();
-    const result: RoleReconcileResult = { assigned: [], removed: [], leftAlone: [] };
+    const result: RoleReconcileResult = { assigned: [], removed: [], leftAlone: [], failed: [] };
     const users = [...await this.users(ctx)].sort((a, b) => a.username.localeCompare(b.username));
     for (const user of users) {
       const { links, unreadable } = readLinks(user);
@@ -189,12 +195,12 @@ export default class ResidencyManager {
         const has = await roles.holds(user.username, role);
         if (should === has) continue;
         if (!should && unreadable.includes(role)) { result.leftAlone.push({ username: user.username, role }); continue; }
-        if (should) {
-          await roles.assign(user.username, role, ctx);
-          result.assigned.push({ username: user.username, role });
-        } else {
-          await roles.remove(user.username, role, ctx);
-          result.removed.push({ username: user.username, role });
+        const change = should ? 'assign' : 'remove';
+        try {
+          await roles[change](user.username, role, ctx);
+          (should ? result.assigned : result.removed).push({ username: user.username, role });
+        } catch (err) {
+          result.failed.push({ username: user.username, role, change, error: err instanceof Error ? err.message : String(err) });
         }
       }
     }

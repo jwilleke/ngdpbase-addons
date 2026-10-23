@@ -172,7 +172,7 @@ describe('ResidencyManager', () => {
       const { door, calls } = roleDoor({});
       await m.reconcileRoles(ctx, door);
       const first = calls.length;
-      expect(await m.reconcileRoles(ctx, door)).toEqual({ assigned: [], removed: [], leftAlone: [] });
+      expect(await m.reconcileRoles(ctx, door)).toEqual({ assigned: [], removed: [], leftAlone: [], failed: [] });
       expect(calls).toHaveLength(first);
     });
 
@@ -182,6 +182,18 @@ describe('ResidencyManager', () => {
       const result = await m.reconcileRoles(ctx, door);
       expect(result.leftAlone).toEqual([{ username: 'broken.links', role: 'owner' }]);
       expect(held['broken.links']).toEqual(['owner']);
+    });
+
+    test('a change RoleManager refuses is listed with its error, and the rest still run', async () => {
+      const m = open();
+      const { door } = roleDoor({});
+      const refusing: RoleDoor = { ...door, assign: async (u, r, c) => {
+        if (u === 'kim.both' && r === 'owner') throw new Error('no Person for kim.both');
+        await door.assign(u, r, c);
+      } };
+      const result = await m.reconcileRoles(ctx, refusing);
+      expect(result.failed).toEqual([{ username: 'kim.both', role: 'owner', change: 'assign', error: 'no Person for kim.both' }]);
+      expect(result.assigned.map(a => `${a.username} ${a.role}`)).toEqual(['kim.both occupant', 'lee.renter occupant', 'pat.example owner', 'sam.example owner']);
     });
 
     test('a readable current entry still gives the role beside an unreadable one', async () => {

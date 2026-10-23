@@ -75,6 +75,8 @@ with no current entry is removed.
   principal; a day missed while the server was down runs at the next start. Run it now from Admin →
   Scheduled Jobs. `ngdpbase.jobs.accommodation.roles.schedule` changes when it runs.
 - Each change goes through `RoleManager`, which records it in the audit log.
+- A change `RoleManager` refuses does not stop the others. The run then fails, naming each refused
+  change and its error, so the job manager retries it, records it and tells the admins.
 - A role is never taken away over an entry that cannot be read; the job leaves it and counts it, and
   `ResidencyManager.linkProblems(ctx)` names the entry.
 - The roles grant nothing by themselves; a site grants permissions to them in its own policies.

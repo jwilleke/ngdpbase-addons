@@ -86,6 +86,22 @@ describe('accommodation register()', () => {
     await AccommodationAddon.shutdown();
   });
 
+  test('the roles job fails, naming each refused change, when RoleManager throws', async () => {
+    const engine = fakeEngine();
+    const jobs: Array<{ run: (p: (m: string) => void, ctx: unknown) => Promise<{ success: boolean; error?: string }> }> = [];
+    engine.managers.set('BackgroundJobManager', { registerJob: (def: never) => { jobs.push(def); } });
+    engine.managers.set('RoleManager', {
+      hasRole: async () => false,
+      assignRole: async () => { throw new Error('role save failed'); },
+      removeRole: async () => true
+    });
+    engine.managers.set('UserManager', { searchUsers: async () => [SAMPLE_USERS[0]] });
+    await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
+    const result = await jobs[0].run(() => undefined, { username: 'system', origin: 'schedule', reason: 'test' });
+    expect(result).toMatchObject({ success: false, error: '1 role change(s) refused: assign owner for pat.example: role save failed' });
+    await AccommodationAddon.shutdown();
+  });
+
   test('declares the owner and occupant roles it assigns', () => {
     const roles = defaults['ngdpbase.roles.definitions'] as Record<string, { name: string }>;
     expect(Object.keys(roles)).toEqual(['owner', 'occupant']);
