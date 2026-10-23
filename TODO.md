@@ -56,7 +56,7 @@ last_updated: "2026-10-23"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-- [#23](https://github.com/jwilleke/ngdpbase-addons/issues/23) — [FEATURE] accommodation: owner and occupant access roles follow the facts
+*None.*
 
 ## ⏸ Deferred
 
