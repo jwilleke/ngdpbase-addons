@@ -253,10 +253,6 @@ for legal purposes", held by the board in Google Docs. What bears on the softwar
 
 ## Open questions
 
-- Should the admin page edit who owns or lives in a unit (part of
-  [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6), or its own issue)?
 - Site-specific questions on the Occupancy information form: later. A form an add-on ships is
   read-only on the site (ngdpbase#1973). ("Are you working?" is not one: it asks for 5311.09's
   business address and phone.)
-- Should condo flag units with no current owner, and where: its status, the compliance view, both?
-- Which resident needs come first?
