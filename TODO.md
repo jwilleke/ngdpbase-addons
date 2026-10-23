@@ -47,12 +47,12 @@ last_updated: "2026-10-23"
 
 ## 🟠 P1
 
+- [#28](https://github.com/jwilleke/ngdpbase-addons/issues/28) — [FEATURE] accommodation: admin page records who owns and lives in each accommodation
 - [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
 - [#25](https://github.com/jwilleke/ngdpbase-addons/issues/25) — [FEATURE] association: create the add-on (accommodation + governance + Ohio 5311 profile)
 - [#24](https://github.com/jwilleke/ngdpbase-addons/issues/24) — [FEATURE] governance: create the add-on; members through a provider; board and officers
 - [#23](https://github.com/jwilleke/ngdpbase-addons/issues/23) — [FEATURE] accommodation: owner and occupant access roles follow the facts
 - [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) — [FEATURE] accommodation: billing parties, charges and late-charge rules
-- [#21](https://github.com/jwilleke/ngdpbase-addons/issues/21) — [FEATURE] accommodation: dated ownership and occupancy as OwnershipInfo and Role
 - [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) — [FEATURE] association: Occupancy information form (ORC 5311.09)
 - [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) — [FEATURE] accommodation: self-service: see your own accommodation, update your own details
 - [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) — [FEATURE] accommodation: raise minVersion once an ngdpbase release has #1985
@@ -64,13 +64,13 @@ last_updated: "2026-10-23"
 ## 🟡 P2
 
 - [#2](https://github.com/jwilleke/ngdpbase-addons/issues/2) — [kit] Kit Sync cannot open its pull request
-- [PR #27](https://github.com/jwilleke/ngdpbase-addons/pull/27) — chore(kit): sync to v1.15.0
 
 ## 🔵 In review
 
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
+- [#21](https://github.com/jwilleke/ngdpbase-addons/issues/21) — [FEATURE] accommodation: dated ownership and occupancy as OwnershipInfo and Role
 - [#20](https://github.com/jwilleke/ngdpbase-addons/issues/20) — [FEATURE] accommodation: create the add-on and move units in under schema.org names
 
 ## ⏸ Deferred
@@ -82,7 +82,7 @@ last_updated: "2026-10-23"
 <!-- Issues and PRs with no resolvable placement. `/pstatus` labels untriaged issues `needs-triage`; -->
 <!-- an open PR lands here when it has neither a placement label nor a linked issue to inherit from. -->
 
-- [#28](https://github.com/jwilleke/ngdpbase-addons/issues/28) — [FEATURE] accommodation: admin page records who owns and lives in each accommodation
+*None.*
 
 <!-- KIT:END -->
 
