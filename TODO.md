@@ -23,7 +23,7 @@ last_updated: "2026-10-23"
 
 <!-- Dependabot and scanner alerts land here first, ahead of other P0 work. -->
 
-*None.*
+- [#29](https://github.com/jwilleke/ngdpbase-addons/issues/29) — [SECURITY] body-parser — DoS via trailing bytes after a compressed request body
 
 ## 🟣 Epics
 
