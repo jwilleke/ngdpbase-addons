@@ -259,5 +259,4 @@ for legal purposes", held by the board in Google Docs. What bears on the softwar
   read-only on the site (ngdpbase#1973). ("Are you working?" is not one: it asks for 5311.09's
   business address and phone.)
 - Should condo flag units with no current owner, and where: its status, the compliance view, both?
-- Board members and officers: modelled in condo, or a role in ngdpbase?
 - Which resident needs come first?
