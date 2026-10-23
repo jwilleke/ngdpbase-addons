@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { ActorContext } from '@jwilleke/ngdpbase-types';
-import ResidencyManager from '../managers/ResidencyManager.js';
+import ResidencyManager, { type RoleDoor } from '../managers/ResidencyManager.js';
 import type { Accommodation } from '../providers/AccommodationProvider.js';
 import { SAMPLE_ACCOMMODATIONS, SAMPLE_USERS, TEST_TODAY } from './fixtures.js';
 
@@ -137,4 +137,60 @@ describe('ResidencyManager', () => {
     expect(await m.owners(ctx, '66-00001.000')).toEqual([]);
   });
 
+
+  describe('reconcileRoles: the owner and occupant roles follow the facts (#23)', () => {
+    /** A stand-in RoleManager: who holds what, and every change it was asked for, with the context. */
+    function roleDoor(held: Record<string, string[]>) {
+      const calls: Array<[string, string, string, unknown]> = [];
+      const door: RoleDoor = {
+        holds: async (u, r) => (held[u] ?? []).includes(r),
+        assign: async (u, r, c) => { calls.push(['assign', u, r, c]); held[u] = [...(held[u] ?? []), r]; },
+        remove: async (u, r, c) => { calls.push(['remove', u, r, c]); held[u] = (held[u] ?? []).filter(x => x !== r); }
+      };
+      return { door, calls, held };
+    }
+
+    test('gives each role to whoever has a current entry, and takes it from whoever has none', async () => {
+      const m = open();
+      const { door, calls } = roleDoor({ 'old.owner': ['owner'], 'moving.in': ['occupant'], 'lee.renter': ['occupant'], admin: ['admin'] });
+      const result = await m.reconcileRoles(ctx, door);
+      expect(result.assigned).toEqual([
+        { username: 'kim.both', role: 'owner' },
+        { username: 'kim.both', role: 'occupant' },
+        { username: 'pat.example', role: 'owner' },
+        { username: 'sam.example', role: 'owner' }
+      ]);
+      expect(result.removed).toEqual([
+        { username: 'moving.in', role: 'occupant' }, // starts next month
+        { username: 'old.owner', role: 'owner' } // sold in 2015
+      ]);
+      expect(calls.every(c => c[3] === ctx)).toBe(true); // every change is made as the caller
+    });
+
+    test('a second run changes nothing', async () => {
+      const m = open();
+      const { door, calls } = roleDoor({});
+      await m.reconcileRoles(ctx, door);
+      const first = calls.length;
+      expect(await m.reconcileRoles(ctx, door)).toEqual({ assigned: [], removed: [], leftAlone: [] });
+      expect(calls).toHaveLength(first);
+    });
+
+    test('a role is never taken away over an entry that cannot be read', async () => {
+      const m = open();
+      const { door, held } = roleDoor({ 'broken.links': ['owner'] });
+      const result = await m.reconcileRoles(ctx, door);
+      expect(result.leftAlone).toEqual([{ username: 'broken.links', role: 'owner' }]);
+      expect(held['broken.links']).toEqual(['owner']);
+    });
+
+    test('a readable current entry still gives the role beside an unreadable one', async () => {
+      const users = [{ username: 'x', ownership: [
+        { typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: 'current', share: 100 },
+        { typeOfGood: 'p2', ownedFrom: 'soon', ownedThrough: 'current', share: 100 }] }];
+      const m = new ResidencyManager({ users: async () => users, accommodation: () => undefined, today: () => TEST_TODAY });
+      const { door } = roleDoor({});
+      expect((await m.reconcileRoles(ctx, door)).assigned).toEqual([{ username: 'x', role: 'owner' }]);
+    });
+  });
 });

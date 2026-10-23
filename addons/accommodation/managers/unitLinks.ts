@@ -74,9 +74,11 @@ interface FieldShape {
 const OWNERSHIP: FieldShape = { field: 'ownership', type: 'owner', parcel: 'typeOfGood', from: 'ownedFrom', to: 'ownedThrough' };
 const OCCUPIES: FieldShape = { field: 'occupies', type: 'occupant', parcel: 'accommodation', from: 'startDate', to: 'endDate' };
 
-function readField(username: string, value: unknown, shape: FieldShape, links: UnitLink[], problems: string[]): void {
-  if (value === undefined) return;
-  if (!Array.isArray(value)) { problems.push(`${username}: ${shape.field} is not a list`); return; }
+/** Reads one field's entries into `links`, and returns how many problems it added. */
+function readField(username: string, value: unknown, shape: FieldShape, links: UnitLink[], problems: string[]): number {
+  const before = problems.length;
+  if (value === undefined) return 0;
+  if (!Array.isArray(value)) { problems.push(`${username}: ${shape.field} is not a list`); return 1; }
   value.forEach((raw, i) => {
     const where = `${username}: ${shape.field}[${i}]`;
     const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -98,18 +100,22 @@ function readField(username: string, value: unknown, shape: FieldShape, links: U
     }
     links.push({ parcel, type: 'occupant', from, to });
   });
+  return problems.length - before;
 }
 
 /**
  * A user's links, and what is wrong with any entries that are not links. Each problem
  * names the user, the field and the entry's position, so an admin can find it.
+ * `unreadable` names the link types with at least one problem, so a caller can leave
+ * alone what it cannot read.
  */
-export function readLinks(user: LinkFields): { links: UnitLink[]; problems: string[] } {
+export function readLinks(user: LinkFields): { links: UnitLink[]; problems: string[]; unreadable: LinkType[] } {
   const links: UnitLink[] = [];
   const problems: string[] = [];
-  readField(user.username, user.ownership, OWNERSHIP, links, problems);
-  readField(user.username, user.occupies, OCCUPIES, links, problems);
-  return { links, problems };
+  const unreadable: LinkType[] = [];
+  if (readField(user.username, user.ownership, OWNERSHIP, links, problems) > 0) unreadable.push('owner');
+  if (readField(user.username, user.occupies, OCCUPIES, links, problems) > 0) unreadable.push('occupant');
+  return { links, problems, unreadable };
 }
 
 /** Whether the link holds on that date: started on or before it, and current or ended on or after it. */

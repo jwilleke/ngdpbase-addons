@@ -26,6 +26,24 @@
       }
     }
   },
+  "ngdpbase.roles.definitions": {
+    "owner": {
+      "name": "owner",
+      "required-aal": 1,
+      "displayname": "Owner",
+      "description": "Owns an accommodation. Given and taken away by the accommodation add-on from the dated ownership entries",
+      "icon": "house-user",
+      "color": "#6f42c1"
+    },
+    "occupant": {
+      "name": "occupant",
+      "required-aal": 1,
+      "displayname": "Occupant",
+      "description": "Lives in an accommodation. Given and taken away by the accommodation add-on from the dated occupancy entries",
+      "icon": "house",
+      "color": "#20c997"
+    }
+  },
   "ngdpbase.access.policies": [
     {
       "id": "accommodation-admin-access",

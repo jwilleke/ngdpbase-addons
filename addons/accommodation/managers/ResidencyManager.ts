@@ -37,6 +37,23 @@ export interface UserRecord {
   [key: string]: unknown;
 }
 
+/**
+ * The ngdpbase roles the facts give (#23), through RoleManager: `holds` reads, `assign` and
+ * `remove` change and record the change as the caller.
+ */
+export interface RoleDoor {
+  holds(username: string, role: LinkType): Promise<boolean>;
+  assign(username: string, role: LinkType, ctx: ActorContext): Promise<void>;
+  remove(username: string, role: LinkType, ctx: ActorContext): Promise<void>;
+}
+
+/** What one reconcile changed, and the people it left alone because their entries could not be read. */
+export interface RoleReconcileResult {
+  assigned: Array<{ username: string; role: LinkType }>;
+  removed: Array<{ username: string; role: LinkType }>;
+  leftAlone: Array<{ username: string; role: LinkType }>;
+}
+
 export interface ResidencyManagerOptions {
   /** Every user record, active or not, read as the caller (UserManager.searchUsers); absent means no users. */
   users?: (ctx: ActorContext) => Promise<UserRecord[]>;
@@ -151,6 +168,37 @@ export default class ResidencyManager {
       }
     }
     return ids.filter(id => !owned.has(id));
+  }
+
+  /**
+   * Make the `owner` and `occupant` roles follow the facts (#23): a person holds `owner`
+   * while any of their ownership entries is current today, and `occupant` while any of
+   * their occupancy entries is; otherwise they lose it. A role is never taken away while
+   * any of that person's entries for it cannot be read: it is left as it is, never guessed
+   * (linkProblems names the entry).
+   * Each change goes through `roles` as the caller, which records it.
+   */
+  async reconcileRoles(ctx: ActorContext, roles: RoleDoor): Promise<RoleReconcileResult> {
+    const today = this.today();
+    const result: RoleReconcileResult = { assigned: [], removed: [], leftAlone: [] };
+    const users = [...await this.users(ctx)].sort((a, b) => a.username.localeCompare(b.username));
+    for (const user of users) {
+      const { links, unreadable } = readLinks(user);
+      for (const role of ['owner', 'occupant'] as const) {
+        const should = links.some(l => l.type === role && holdsOn(l, today));
+        const has = await roles.holds(user.username, role);
+        if (should === has) continue;
+        if (!should && unreadable.includes(role)) { result.leftAlone.push({ username: user.username, role }); continue; }
+        if (should) {
+          await roles.assign(user.username, role, ctx);
+          result.assigned.push({ username: user.username, role });
+        } else {
+          await roles.remove(user.username, role, ctx);
+          result.removed.push({ username: user.username, role });
+        }
+      }
+    }
+    return result;
   }
 
   /**

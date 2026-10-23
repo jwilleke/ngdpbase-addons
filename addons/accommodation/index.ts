@@ -5,7 +5,9 @@
  * reference site; nothing here is condo-only, so a landlord can use it too.
  *
  * register() registers AccommodationManager, ResidencyManager and the [{Accommodation}]
- * plugin, mounts the API at /api/accommodation, and sets the `accommodation` capability.
+ * plugin, mounts the API at /api/accommodation, sets the `accommodation` capability, and
+ * registers the daily job `accommodation.roles`, which keeps the `owner` and `occupant`
+ * roles in step with the dated ownership and occupancy entries (#23).
  *
  * Configuration keys:
  *   ngdpbase.addons.accommodation.enabled  — true/false (defaults to false)
@@ -23,7 +25,7 @@ import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types
 import apiRoutes from './routes/api.js';
 import path from 'node:path';
 import AccommodationManager, { createProvider } from './managers/AccommodationManager.js';
-import ResidencyManager, { type UserRecord } from './managers/ResidencyManager.js';
+import ResidencyManager, { type RoleDoor, type UserRecord } from './managers/ResidencyManager.js';
 import { categoriesFrom } from './managers/categories.js';
 import { lateChargesFrom } from './managers/lateCharges.js';
 import AccommodationPlugin from './plugins/AccommodationPlugin.js';
@@ -32,6 +34,17 @@ interface PluginManagerLike { registerPlugin(name: string, plugin: unknown): Pro
 interface ConfigurationManagerLike { resolveDataPath(p: string): string }
 interface CacheManagerLike { bump(topic: string): Promise<unknown> }
 interface PolicyDecisionPointLike { decide(subject: unknown, request: { action: string }): Promise<Decision> }
+interface RoleManagerLike {
+  hasRole(username: string, roleName: string): Promise<boolean>;
+  assignRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean>;
+  removeRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean>;
+}
+interface BackgroundJobManagerLike {
+  registerJob(def: {
+    id: string; displayName: string; schedule: string; catchUp: 'latest';
+    run(reportProgress: (message: string) => void, ctx: ActorContext): Promise<{ success: boolean; summary?: string }>;
+  }): void;
+}
 interface UserManagerLike {
   searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<UserRecord[]>;
 }
@@ -86,6 +99,33 @@ const AccommodationAddon = {
     });
     engine.registerManager('ResidencyManager', residency);
     statusContext = () => host.systemContext('accommodation: status, accommodations with no current owner');
+
+    // The owner and occupant roles follow the facts (#23). The add-on writes no ownership or
+    // occupancy yet, so a daily job catches every start and end; a missed day runs at start-up.
+    const roleManager = engine.getManager<RoleManagerLike>('RoleManager');
+    const jobs = engine.getManager<BackgroundJobManagerLike>('BackgroundJobManager');
+    if (roleManager && jobs) {
+      const roles: RoleDoor = {
+        holds: (username, role) => roleManager.hasRole(username, role),
+        assign: async (username, role, ctx) => { await roleManager.assignRole(username, role, ctx); },
+        remove: async (username, role, ctx) => { await roleManager.removeRole(username, role, ctx); }
+      };
+      const residencyManager = residency;
+      jobs.registerJob({
+        id: 'accommodation.roles',
+        displayName: 'Accommodation: owner and occupant roles follow the dated entries',
+        schedule: 'daily 00:05',
+        catchUp: 'latest',
+        run: async (reportProgress, ctx) => {
+          const { assigned, removed, leftAlone } = await residencyManager.reconcileRoles(ctx, roles);
+          const summary = `${assigned.length} role(s) assigned, ${removed.length} removed, ${leftAlone.length} left alone (unreadable entries)`;
+          reportProgress(summary);
+          return { success: true, summary };
+        }
+      });
+    } else {
+      host.logger.warn('[accommodation] No RoleManager or BackgroundJobManager: the owner and occupant roles are not kept in step');
+    }
     host.logger.info(`[accommodation] Accommodations from provider '${accommodations.providerName}': ${accommodations.count()}`);
 
     await engine.getManager<PluginManagerLike>('PluginManager')?.registerPlugin('Accommodation', AccommodationPlugin);

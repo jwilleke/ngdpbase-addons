@@ -17,9 +17,10 @@ describe('unit links', () => {
         { parcel: 'p1', type: 'owner', from: '2012-05-01', to: '2020-08-31', share: 50 },
         { parcel: 'p2', type: 'occupant', from: '2021-01-15', to: 'current' }
       ],
-      problems: []
+      problems: [],
+      unreadable: []
     });
-    expect(readLinks({ username: 'u' })).toEqual({ links: [], problems: [] });
+    expect(readLinks({ username: 'u' })).toEqual({ links: [], problems: [], unreadable: [] });
   });
 
   test.each([
@@ -60,10 +61,13 @@ describe('unit links', () => {
   });
 
   test('a field that is not a list is reported', () => {
-    expect(readLinks({ username: 'jane', ownership: 'p1', occupies: {} }).problems).toEqual([
-      'jane: ownership is not a list',
-      'jane: occupies is not a list'
-    ]);
+    const read = readLinks({ username: 'jane', ownership: 'p1', occupies: {} });
+    expect(read.problems).toEqual(['jane: ownership is not a list', 'jane: occupies is not a list']);
+    expect(read.unreadable).toEqual(['owner', 'occupant']);
+  });
+
+  test('unreadable names only the link types with a problem', () => {
+    expect(readLinks({ username: 'u', ownership: [owned({ share: 0 })], occupies: [occupied()] }).unreadable).toEqual(['owner']);
   });
 
   test('holdsOn: from and to are both days the link holds', () => {

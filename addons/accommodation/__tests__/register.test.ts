@@ -66,6 +66,32 @@ describe('accommodation register()', () => {
     expect(await AccommodationAddon.status()).toMatchObject({ healthy: false });
   });
 
+  test('registers the daily roles job, which changes roles through RoleManager as the job runs', async () => {
+    const engine = fakeEngine();
+    const jobs: Array<{ id: string; schedule: string; run: (p: (m: string) => void, ctx: unknown) => Promise<{ success: boolean; summary?: string }> }> = [];
+    const changes: unknown[][] = [];
+    engine.managers.set('BackgroundJobManager', { registerJob: (def: never) => { jobs.push(def); } });
+    engine.managers.set('RoleManager', {
+      hasRole: async () => false,
+      assignRole: async (...a: unknown[]) => { changes.push(['assign', ...a]); return true; },
+      removeRole: async (...a: unknown[]) => { changes.push(['remove', ...a]); return true; }
+    });
+    engine.managers.set('UserManager', { searchUsers: async () => [SAMPLE_USERS[0]] });
+    await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
+    expect(jobs.map(j => [j.id, j.schedule])).toEqual([['accommodation.roles', 'daily 00:05']]);
+    const jobCtx = { username: 'system', origin: 'schedule', reason: 'test' };
+    const result = await jobs[0].run(() => undefined, jobCtx);
+    expect(result).toEqual({ success: true, summary: '1 role(s) assigned, 0 removed, 0 left alone (unreadable entries)' });
+    expect(changes).toEqual([['assign', 'pat.example', 'owner', jobCtx]]);
+    await AccommodationAddon.shutdown();
+  });
+
+  test('declares the owner and occupant roles it assigns', () => {
+    const roles = defaults['ngdpbase.roles.definitions'] as Record<string, { name: string }>;
+    expect(Object.keys(roles)).toEqual(['owner', 'occupant']);
+    expect(roles.owner.name).toBe('owner');
+  });
+
   test('the plugin escapes what it is given', () => {
     expect(AccommodationPlugin.execute({ formatters }, { id: '<b>07</b>' })).toBe('<span class="accommodation">Accommodation &lt;b&gt;07&lt;/b&gt;</span>');
   });

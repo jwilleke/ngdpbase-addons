@@ -63,6 +63,22 @@ returns everyone the accommodation has had, with their dates. `withoutOwner(ctx,
 of `ids` with no owner today (or on `{ on }`); the add-on's status on Admin → Add-ons names them, worked
 out each time it is shown.
 
+## Owner and occupant roles
+
+The add-on declares two ngdpbase roles, `owner` and `occupant`, and keeps them in step with the dated
+entries above ([#23](https://github.com/jwilleke/ngdpbase-addons/issues/23)). A person holds `owner`
+while any of their `ownership` entries is current, and `occupant` while any of their `occupies`
+entries is; otherwise the role is taken away. The facts are the source: a role given by hand to someone
+with no current entry is removed.
+
+- The daily scheduled job `accommodation.roles` (00:05 in the site's time zone, `ngdpbase.default.timezone`) makes the changes, as the system
+  principal; a day missed while the server was down runs at the next start. Run it now from Admin →
+  Scheduled Jobs. `ngdpbase.jobs.accommodation.roles.schedule` changes when it runs.
+- Each change goes through `RoleManager`, which records it in the audit log.
+- A role is never taken away over an entry that cannot be read; the job leaves it and counts it, and
+  `ResidencyManager.linkProblems(ctx)` names the entry.
+- The roles grant nothing by themselves; a site grants permissions to them in its own policies.
+
 ## Billing
 
 One invoice per billing address. The accommodation keeps its billing parties:
