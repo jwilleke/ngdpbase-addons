@@ -1,7 +1,7 @@
 ---
 title: TODO
 description: Priority bands and resume pointer for this repo.
-last_updated: "2026-10-22"
+last_updated: "2026-10-23"
 ---
 
 # TODO
@@ -36,7 +36,6 @@ last_updated: "2026-10-22"
 
 - [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) — [FEATURE] condo: Occupancy information form (ORC 5311.09)
 - [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) — [FEATURE] condo: resident self-service: see your own unit, update your own details
-- [#14](https://github.com/jwilleke/ngdpbase-addons/issues/14) — [FEATURE] condo: billing parties on the unit, one invoice per billing address
 - [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) — [FEATURE] condo: drop its own backup code once BackupManager backs up add-on dataPaths
 - [#12](https://github.com/jwilleke/ngdpbase-addons/issues/12) — [FEATURE] condo: set condoUserType and parcel from The Fairways' type
 - [#8](https://github.com/jwilleke/ngdpbase-addons/issues/8) — [FEATURE] condo: directory CSV import with column map
@@ -52,7 +51,7 @@ last_updated: "2026-10-22"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#14](https://github.com/jwilleke/ngdpbase-addons/issues/14) — [FEATURE] condo: billing parties on the unit, one invoice per billing address
 
 ## ⏸ Deferred
 
