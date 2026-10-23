@@ -1,0 +1,45 @@
+{
+  "name": "@jwilleke/accommodation-addon",
+  "version": "0.1.0",
+  "description": "Accommodations, their categories, and their owners and occupants, for ngdpbase",
+  "license": "Apache-2.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jwilleke/ngdpbase-addons.git",
+    "directory": "addons/accommodation"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "devDependencies": {
+    "@jwilleke/ngdpbase-types": "5.23.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.19.1",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
+  },
+  "ngdpbase": {
+    "slug": "accommodation",
+    "type": "additive",
+    "minVersion": "5.23.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
+    "test": "vitest run"
+  },
+  "files": [
+    "index.js",
+    "managers/*.js",
+    "routes/*.js",
+    "plugins/*.js",
+    "providers/*.js",
+    "forms/*.js",
+    "config/",
+    "pages/",
+    "docs/",
+    "README.md"
+  ]
+}

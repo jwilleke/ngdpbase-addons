@@ -14,4 +14,4 @@ addons/*/**/*.js.map
 addons/*/index.js
 addons/*/.tsbuildinfo
 addons/*/node_modules/
-addons/condo/config/ngdpbase-addons.code-workspace
+addons/*/config/ngdpbase-addons.code-workspace

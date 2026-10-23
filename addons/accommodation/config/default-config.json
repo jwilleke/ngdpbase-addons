@@ -1,0 +1,54 @@
+{
+  "_comment": "Defaults for the accommodation add-on. A site overrides any key in its app-custom-config.json.",
+  "ngdpbase.addons.accommodation.enabled": false,
+  "ngdpbase.addons.accommodation.provider": "json",
+  "ngdpbase.addons.accommodation.categories": {},
+  "ngdpbase.addons.accommodation.late-charges": {},
+  "ngdpbase.config.sensitive-values": {
+    "ngdpbase.addons.accommodation.dataPath": "sensitive"
+  },
+  "ngdpbase.permissions.definitions": {
+    "accommodation-read": {
+      "description": "See accommodations, their owners and occupants, and assessments",
+      "label": "See accommodations",
+      "icon": "building",
+      "color": "#6c757d"
+    },
+    "accommodation-manage": {
+      "description": "Manage the accommodation add-on: accommodations, owners and the directory import",
+      "label": "Manage accommodations",
+      "icon": "building",
+      "color": "#0d6efd",
+      "audit": {
+        "on-failure": "refuse",
+        "enabled": true,
+        "description": "Accommodation changed"
+      }
+    }
+  },
+  "ngdpbase.access.policies": [
+    {
+      "id": "accommodation-admin-access",
+      "name": "Accommodation administration",
+      "description": "Admins see and manage accommodations. A site grants accommodation-read or accommodation-manage to its board or treasurer in its own policy.",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "accommodation-read",
+        "accommodation-manage"
+      ]
+    }
+  ]
+}
