@@ -23,7 +23,7 @@ last_updated: "2026-10-23"
 
 <!-- Dependabot and scanner alerts land here first, ahead of other P0 work. -->
 
-- [#29](https://github.com/jwilleke/ngdpbase-addons/issues/29) — [SECURITY] body-parser — DoS via trailing bytes after a compressed request body
+*None.*
 
 ## 🟣 Epics
 
@@ -56,7 +56,7 @@ last_updated: "2026-10-23"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#29](https://github.com/jwilleke/ngdpbase-addons/issues/29) — [SECURITY] body-parser — DoS via trailing bytes after a compressed request body
 
 ## ⏸ Deferred
 
