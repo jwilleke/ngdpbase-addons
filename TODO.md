@@ -38,7 +38,6 @@ last_updated: "2026-10-23"
 - [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
 - [#25](https://github.com/jwilleke/ngdpbase-addons/issues/25) — [FEATURE] association: create the add-on (accommodation + governance + Ohio 5311 profile)
 - [#24](https://github.com/jwilleke/ngdpbase-addons/issues/24) — [FEATURE] governance: create the add-on; members through a provider; board and officers
-- [#23](https://github.com/jwilleke/ngdpbase-addons/issues/23) — [FEATURE] accommodation: owner and occupant access roles follow the facts
 - [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) — [FEATURE] accommodation: billing parties, charges and late-charge rules
 - [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) — [FEATURE] association: Occupancy information form (ORC 5311.09)
 - [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) — [FEATURE] accommodation: self-service: see your own accommodation, update your own details
@@ -57,7 +56,7 @@ last_updated: "2026-10-23"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#23](https://github.com/jwilleke/ngdpbase-addons/issues/23) — [FEATURE] accommodation: owner and occupant access roles follow the facts
 
 ## ⏸ Deferred
 
