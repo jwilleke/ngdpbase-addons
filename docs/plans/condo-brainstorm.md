@@ -6,7 +6,9 @@ last_updated: "2026-10-23"
 
 # Condo add-on — brainstorm notes
 
-Status: __building__. Epic [#9](https://github.com/jwilleke/ngdpbase-addons/issues/9).
+Status: __brainstorm closed (operator, 2026-10-23)__. The structure below is decided and being built
+as the `accommodation`, `governance` and `association` add-ons. Epic [#9](https://github.com/jwilleke/ngdpbase-addons/issues/9) holds the condo work done
+so far.
 Each decision below is recorded, with its reasons, on the issue it links to. This page gathers them in
 one place and holds the ideas that don't have an issue yet.
 
@@ -169,9 +171,12 @@ below it.
 - Federal law (for example the Fair Housing Act's reasonable accommodation) is listed in the document
   register as obligations, not as settings.
 
-## Outside advice under consideration (2026-10-23)
+## Outside advice (2026-10-23)
 
-Advice the operator brought in, with our view beside each point. Nothing here is decided or filed yet.
+Advice the operator brought in, with our view beside each point. The three core candidates are filed:
+[ngdpbase#2002](https://github.com/jwilleke/ngdpbase/issues/2002) version ranges on add-on dependencies,
+[ngdpbase#2003](https://github.com/jwilleke/ngdpbase/issues/2003) dated affiliations,
+[ngdpbase#2004](https://github.com/jwilleke/ngdpbase/issues/2004) optional expiry on role assignments.
 
 __The placement test__ (worth adopting): if a feature mentions a law, a profile or "condo", it belongs
 in the association layer; if a club and a landlord could both use it, it belongs in a shared add-on

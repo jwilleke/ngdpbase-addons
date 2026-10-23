@@ -30,17 +30,24 @@ last_updated: "2026-10-23"
 <!-- Issues labeled `epic`. This band outranks a priority label, so an epic does not get -->
 <!-- buried among the issues that implement it; the priority label orders this band instead. -->
 
-- [#9](https://github.com/jwilleke/ngdpbase-addons/issues/9) — [EPIC] condo add-on
+- [#19](https://github.com/jwilleke/ngdpbase-addons/issues/19) — [EPIC] accommodation, governance and association add-ons
 
 ## 🟠 P1
 
-- [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) — [FEATURE] condo: Occupancy information form (ORC 5311.09)
-- [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) — [FEATURE] condo: resident self-service: see your own unit, update your own details
-- [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) — [FEATURE] condo: drop its own backup code once BackupManager backs up add-on dataPaths
-- [#12](https://github.com/jwilleke/ngdpbase-addons/issues/12) — [FEATURE] condo: set condoUserType and parcel from The Fairways' type
-- [#8](https://github.com/jwilleke/ngdpbase-addons/issues/8) — [FEATURE] condo: directory CSV import with column map
-- [#7](https://github.com/jwilleke/ngdpbase-addons/issues/7) — [FEATURE] condo: `[{CondoUnit}]` plugin
-- [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6) — [FEATURE] condo: API and admin routes and view
+- [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
+- [#25](https://github.com/jwilleke/ngdpbase-addons/issues/25) — [FEATURE] association: create the add-on (accommodation + governance + Ohio 5311 profile)
+- [#24](https://github.com/jwilleke/ngdpbase-addons/issues/24) — [FEATURE] governance: create the add-on; members through a provider; board and officers
+- [#23](https://github.com/jwilleke/ngdpbase-addons/issues/23) — [FEATURE] accommodation: owner and occupant access roles follow the facts
+- [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) — [FEATURE] accommodation: billing parties, charges and late-charge rules
+- [#21](https://github.com/jwilleke/ngdpbase-addons/issues/21) — [FEATURE] accommodation: dated ownership and occupancy as OwnershipInfo and Role
+- [#20](https://github.com/jwilleke/ngdpbase-addons/issues/20) — [FEATURE] accommodation: create the add-on and move units in under schema.org names
+- [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) — [FEATURE] association: Occupancy information form (ORC 5311.09)
+- [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) — [FEATURE] accommodation: self-service: see your own accommodation, update your own details
+- [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) — [FEATURE] accommodation: raise minVersion once an ngdpbase release has #1985
+- [#12](https://github.com/jwilleke/ngdpbase-addons/issues/12) — [FEATURE] accommodation: move The Fairways' type, parcel and move-in dates onto OwnershipInfo and Role
+- [#8](https://github.com/jwilleke/ngdpbase-addons/issues/8) — [FEATURE] accommodation: directory CSV import with column map
+- [#7](https://github.com/jwilleke/ngdpbase-addons/issues/7) — [FEATURE] accommodation: `[{Accommodation}]` plugin
+- [#6](https://github.com/jwilleke/ngdpbase-addons/issues/6) — [FEATURE] accommodation: API and admin page
 
 ## 🟡 P2
 
