@@ -25,7 +25,11 @@ export const FAIRWAYS_LATE_CHARGES = {
 export const SAMPLE_UNITS: CondoUnit[] = [
   {
     id: '66-00001.000', streetNo: '101', streetName: 'Sample', streetType: 'Dr', city: 'Mount Vernon',
-    unitType: 'C', sqft: 1500, marketValue: 200000, shares: { 'pat.example': 60 }, notes: ''
+    unitType: 'C', sqft: 1500, marketValue: 200000, notes: '',
+    billing: [
+      { to: ['pat.example'], address: { streetAddress: '101 Sample Dr', addressLocality: 'Mount Vernon', addressRegion: 'OH', postalCode: '43050' }, share: 60 },
+      { to: ['sam.example'], address: { streetAddress: '9 Elsewhere Ln', addressLocality: 'Columbus', addressRegion: 'OH', postalCode: '43215' }, share: 40 }
+    ]
   },
   { id: '66-00002.000', streetNo: '103', streetName: 'Sample', streetType: 'Dr', unitType: 'D', sqft: 1900, notes: 'corner unit' },
   { id: '66-00003.000', streetNo: '105', streetName: 'Sample', streetType: 'Dr', unitType: 'Z' }

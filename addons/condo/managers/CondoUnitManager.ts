@@ -7,10 +7,10 @@
  * (`ngdpbase.addons.condo.provider`, default `json`); nothing else touches the
  * store. A unit's `id` is its county parcel; every other field it was given is
  * kept and passed through (https://github.com/jwilleke/ngdpbase-addons/issues/4).
- * The manager names the generic ones: `unitType`, `shares`, `notes`.
+ * The manager names the generic ones: `unitType`, `billing`, `notes`.
  *
  * Who owns or lives in a unit is ResidencyManager's (managers/ResidencyManager.ts);
- * the unit keeps only `shares`, by username.
+ * the unit keeps only its billing parties (`billing`, #14).
  *
  * Every write goes through write(), which saves and then bumps the
  * 'CondoUnitManager' cache topic, so pages showing units re-render.

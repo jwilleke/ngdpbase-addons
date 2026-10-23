@@ -5,7 +5,8 @@
  * The links live on the ngdpbase user records, as condo's extended field
  * `condoUnits` (https://github.com/jwilleke/ngdpbase-addons/issues/15,
  * unitLinks.ts); this manager is their door. The units themselves, and the
- * owners' shares kept on each unit, are CondoUnitManager's.
+ * billing parties kept on each unit, are CondoUnitManager's; billing() reads
+ * them with the owners (https://github.com/jwilleke/ngdpbase-addons/issues/14).
  *
  * Users are read with the caller's context (a person's, or a job's with its
  * reason), so the read is attributed; the permission decision is made at the
@@ -14,12 +15,13 @@
 import type { ActorContext } from '@jwilleke/ngdpbase-types';
 import type { CondoUnit } from '../providers/CondoUnitProvider.js';
 import { holdsOn, isIsoDate, localToday, readLinks, type LinkType, type UnitLink } from './unitLinks.js';
+import { joinNames, readBillingParties, unitAddress, type PostalAddress } from './billing.js';
 
 /** A person on a unit: `username` is the ngdpbase account. */
 export interface UnitMember { username: string; name: string; email: string | null }
 
-/** An owner as billed: `share` is the percent of the assessment they pay. */
-export interface UnitOwner extends UnitMember { share: number }
+/** One invoice: the owners it is addressed to, where it goes, and the percent of the assessment. */
+export interface BillingParty { to: UnitMember[]; name: string; address: PostalAddress; share: number }
 
 /** One link of a unit's history, with the person it names. */
 export interface UnitHistoryEntry extends UnitMember { type: LinkType; from: string; to: string }
@@ -85,23 +87,40 @@ export default class ResidencyManager {
   }
 
   /**
-   * A unit's owners on a date (today unless `on` is given), each with the share
-   * of the assessment they are billed: the unit's `shares` by username, and
-   * owners without one split what is left evenly. More than 100 given is
-   * refused. `ctx` is the caller's: the person's, or a job's with its reason.
+   * A unit's owners on a date (today unless `on` is given), ordered by
+   * username. `ctx` is the caller's: the person's, or a job's with its reason.
    */
-  async owners(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<UnitOwner[]> {
-    const owners = await this.members(ctx, id, 'owner', options.on);
-    const shares = (this.unit(id)?.shares ?? {}) as Record<string, unknown>;
-    const given = (o: UnitMember): number | null => {
-      const s = shares[o.username];
-      return typeof s === 'number' && Number.isFinite(s) ? s : null;
-    };
-    const total = owners.reduce((t, o) => t + (given(o) ?? 0), 0);
-    if (total > 100) throw new Error(`unit ${id}: owners' shares add up to ${total}%, more than 100%`);
-    const unshared = owners.filter(o => given(o) === null).length;
-    const each = unshared ? (100 - total) / unshared : 0;
-    return owners.map(o => ({ ...o, share: given(o) ?? each }));
+  async owners(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<UnitMember[]> {
+    return this.members(ctx, id, 'owner', options.on);
+  }
+
+  /**
+   * Who gets the unit's invoices on a date (today unless `on` is given): one
+   * party per billing address, each with its owners, address and share. With
+   * no parties kept on the unit, one party: every current owner at the unit's
+   * own address, 100%. Throws, naming the unit, rather than bill wrongly: a
+   * party naming someone who is not a current owner, shares that do not add
+   * up to 100, no owners, or no address.
+   */
+  async billing(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<BillingParty[]> {
+    const owners = await this.owners(ctx, id, options);
+    if (owners.length === 0) throw new Error(`unit ${id}: no current owner to bill`);
+    const byName = new Map(owners.map(o => [o.username, o]));
+    const unit = this.unit(id);
+    const stored = readBillingParties(id, unit?.billing);
+    const parties = stored ?? (() => {
+      const address = unitAddress(unit);
+      if (!address) throw new Error(`unit ${id}: no billing parties and no unit address to bill`);
+      return [{ to: owners.map(o => o.username), address, share: 100 }];
+    })();
+    return parties.map((p, i) => {
+      const to = p.to.map(username => {
+        const owner = byName.get(username);
+        if (!owner) throw new Error(`unit ${id}: billing[${i}] names ${username}, who is not a current owner`);
+        return owner;
+      });
+      return { to, name: joinNames(to.map(o => o.name)), address: p.address, share: p.share };
+    });
   }
 
   /** The people living in the unit on a date (today unless `on` is given); never billed. */

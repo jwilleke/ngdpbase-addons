@@ -45,12 +45,31 @@ Every owner and occupant is an ngdpbase user. Condo's extended field on the user
 - A link that is not exactly this shape is left out and listed by `ResidencyManager.linkProblems(ctx)`,
   never guessed.
 
-`ResidencyManager.owners(ctx, id)` returns the unit's owners today (or on `{ on: 'YYYY-MM-DD' }`),
-each with the share of the assessment they pay. `ctx` is the caller's: the person who asked, or a
-job's context with its reason; users are read as that caller (`UserManager.searchUsers`), inactive
-accounts included. The unit holds the shares by username (`"shares": { "pat.example": 60 }`); owners
-without one split what is left evenly. `occupants(ctx, id)` returns the people living there, who are
-never billed. `history(ctx, id)` returns everyone the unit has had, with their dates.
+`ResidencyManager.owners(ctx, id)` returns the unit's owners today (or on `{ on: 'YYYY-MM-DD' }`).
+`ctx` is the caller's: the person who asked, or a job's context with its reason; users are read as
+that caller (`UserManager.searchUsers`), inactive accounts included. `occupants(ctx, id)` returns the
+people living there, who are never billed. `history(ctx, id)` returns everyone the unit has had, with
+their dates.
+
+## Billing
+
+One invoice per billing address. The unit keeps its billing parties:
+
+```json
+"billing": [
+  { "to": ["jim.willeke", "molly.willeke"], "address": { "streetAddress": "21 Fairway Dr", "addressLocality": "Mount Vernon", "addressRegion": "OH", "postalCode": "43050" }, "share": 100 }
+]
+```
+
+- `to`: the owners named on the invoice; each must be a current owner.
+- `address`: where it goes (schema.org PostalAddress).
+- `share`: that party's percent of the assessment; the parties add up to exactly 100.
+- A unit with no `billing` has one party: every current owner, at the unit's own address (its
+  `address` field, else its county street fields), 100%.
+
+`ResidencyManager.billing(ctx, id, { on })` returns the parties with owners' names filled in, one per
+invoice. It refuses, naming the unit, rather than bill wrongly: a party naming someone who is not a
+current owner, shares that do not add up to 100, a unit with no owner or no address.
 
 ## Unit types
 
