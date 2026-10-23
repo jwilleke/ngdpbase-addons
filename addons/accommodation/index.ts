@@ -45,6 +45,8 @@ interface Engine {
 }
 
 let accommodations: AccommodationManager | null = null;
+let residency: ResidencyManager | null = null;
+let statusContext: (() => ActorContext) | null = null;
 
 const AccommodationAddon = {
   name: 'accommodation',
@@ -77,11 +79,13 @@ const AccommodationAddon = {
     engine.registerManager('AccommodationManager', accommodations);
 
     const accommodationManager = accommodations;
-    engine.registerManager('ResidencyManager', new ResidencyManager({
+    residency = new ResidencyManager({
       // Every user, inactive ones too: an owner whose account is off still owes.
       users: async (ctx) => (await engine.getManager<UserManagerLike>('UserManager')?.searchUsers('', { limit: 0, activeOnly: false }, ctx)) ?? [],
       accommodation: (id) => accommodationManager.get(id)
-    }));
+    });
+    engine.registerManager('ResidencyManager', residency);
+    statusContext = () => host.systemContext('accommodation: status, accommodations with no current owner');
     host.logger.info(`[accommodation] Accommodations from provider '${accommodations.providerName}': ${accommodations.count()}`);
 
     await engine.getManager<PluginManagerLike>('PluginManager')?.registerPlugin('Accommodation', AccommodationPlugin);
@@ -90,13 +94,24 @@ const AccommodationAddon = {
     engine.setCapability('accommodation', true);
   },
 
-  status(): { healthy: boolean; records: number; message: string } {
-    const count = accommodations?.count() ?? 0;
-    return { healthy: accommodations !== null, records: count, message: `${count} accommodation(s) loaded` };
+  /**
+   * How many accommodations are loaded, and which have no current owner: worked out from the
+   * dated ownership entries each time it is asked, never stored or scheduled (operator,
+   * 2026-10-23, https://github.com/jwilleke/ngdpbase-addons/issues/21).
+   */
+  async status(): Promise<{ healthy: boolean; records: number; message: string }> {
+    if (!accommodations || !residency || !statusContext) return { healthy: false, records: 0, message: '0 accommodation(s) loaded' };
+    const count = accommodations.count();
+    const loaded = `${count} accommodation(s) loaded`;
+    const none = await residency.withoutOwner(statusContext(), accommodations.list().map(a => a.id));
+    if (none.length === 0) return { healthy: true, records: count, message: loaded };
+    return { healthy: true, records: count, message: `${loaded}; ${none.length} with no current owner: ${none.join(', ')}` };
   },
 
   async shutdown(): Promise<void> {
     accommodations = null;
+    residency = null;
+    statusContext = null;
   }
 };
 

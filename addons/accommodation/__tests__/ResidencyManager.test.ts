@@ -1,6 +1,6 @@
 /**
  * ResidencyManager: owners and occupants from the dated links on user records
- * (#15), read as the caller. No files are written.
+ * (#21), read as the caller. No files are written.
  */
 import { describe, expect, test } from 'vitest';
 import type { ActorContext } from '@jwilleke/ngdpbase-types';
@@ -63,7 +63,26 @@ describe('ResidencyManager', () => {
 
   test('a malformed link is reported, never guessed', async () => {
     const m = open();
-    expect(await m.linkProblems(ctx)).toEqual(['broken.links: condoUnits[0].to must be a date YYYY-MM-DD or "current"']);
+    expect(await m.linkProblems(ctx)).toEqual(['broken.links: ownership[0].ownedThrough must be a date YYYY-MM-DD or "current"']);
+  });
+
+  test("owners' shares that do not add up to 100 are reported, on each date the owners change", async () => {
+    const users = [
+      { username: 'a', ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: 'current', share: 60 }] },
+      { username: 'b', ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: '2021-12-31', share: 40 }] },
+      { username: 'c', ownership: [{ typeOfGood: 'p1', ownedFrom: '2022-01-01', ownedThrough: 'current', share: 30 }] }
+    ];
+    const m = new ResidencyManager({ users: async () => users, accommodation: () => undefined, today: () => TEST_TODAY });
+    expect(await m.linkProblems(ctx)).toEqual(["unit p1: owners' shares on 2022-01-01 add up to 90%, not 100% (a 60%, c 30%)"]);
+  });
+
+  test('withoutOwner: the units with no owner on the date, live from the links', async () => {
+    const m = open();
+    const ids = SAMPLE_ACCOMMODATIONS.map(a => a.id);
+    expect(await m.withoutOwner(ctx, ids)).toEqual(['66-00003.000']);
+    expect(await m.withoutOwner(ctx, ids, { on: '2009-01-01' })).toEqual(['66-00002.000', '66-00003.000']);
+    expect(asked.every(c => c === ctx)).toBe(true);
+    await expect(m.withoutOwner(ctx, ids, { on: 'soon' })).rejects.toThrow('not a date');
   });
 
   test('billing: one invoice per billing party, as kept on the unit', async () => {

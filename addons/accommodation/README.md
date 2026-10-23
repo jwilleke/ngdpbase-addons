@@ -33,27 +33,35 @@ has no backup code of its own.
 
 ## Owners and occupants
 
-Every owner and occupant is an ngdpbase user. The extended field on the user record, `condoUnits`,
-holds dated links to their accommodations, until it becomes `OwnershipInfo` and `Role`
+Every owner and occupant is an ngdpbase user. Two extended fields on the user record hold their
+dated links to accommodations, in schema.org shapes
 ([#21](https://github.com/jwilleke/ngdpbase-addons/issues/21)):
 
 ```json
-"condoUnits": [
-  { "parcel": "66-00001.000", "type": "owner", "from": "2012-05-01", "to": "2020-08-31" },
-  { "parcel": "66-00002.000", "type": "occupant", "from": "2021-01-15", "to": "current" }
+"ownership": [
+  { "typeOfGood": "66-00001.000", "ownedFrom": "2012-05-01", "ownedThrough": "2020-08-31", "share": 100 }
+],
+"occupies": [
+  { "roleName": "occupant", "accommodation": "66-00002.000", "startDate": "2021-01-15", "endDate": "current" }
 ]
 ```
 
-- `type`: `owner` or `occupant`; an owner who lives in the accommodation has one link of each.
-- `from`: an ISO date. `to`: an ISO date, or `"current"`. Both days count.
-- A link that is not exactly this shape is left out and listed by `ResidencyManager.linkProblems(ctx)`,
-  never guessed.
+- `ownership` entries are `OwnershipInfo`: `typeOfGood` is the accommodation's parcel, and `share` the
+  owner's percent of it (for joint owners' votes, not billing). On any date an accommodation's current
+  owners' shares add up to exactly 100; a sole owner writes 100.
+- `occupies` entries are `Role`: `roleName` is `occupant` (agent and tenant come later), and
+  `accommodation` is the parcel. An owner who lives in the accommodation has an entry in each field.
+- Start dates are ISO dates. An end is an ISO date, or `"current"`. Both days count.
+- An entry that is not exactly this shape is left out and listed by `ResidencyManager.linkProblems(ctx)`,
+  never guessed. It also lists every date an accommodation's owners' shares do not add up to 100.
 
 `ResidencyManager.owners(ctx, id)` returns the accommodation's owners today (or on
 `{ on: 'YYYY-MM-DD' }`). `ctx` is the caller's: the person who asked, or a job's context with its
 reason; users are read as that caller (`UserManager.searchUsers`), inactive accounts included.
 `occupants(ctx, id)` returns the people living there, who are never billed. `history(ctx, id)`
-returns everyone the accommodation has had, with their dates.
+returns everyone the accommodation has had, with their dates. `withoutOwner(ctx, ids)` returns those
+of `ids` with no owner today (or on `{ on }`); the add-on's status on Admin → Add-ons names them, worked
+out each time it is shown.
 
 ## Billing
 

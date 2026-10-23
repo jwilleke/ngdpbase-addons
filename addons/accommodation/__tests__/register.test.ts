@@ -3,13 +3,14 @@
  * this add-on's own default-config.json. Data goes to a temporary folder that
  * each test removes, and nothing else.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { buildAddonHost, formatters } from '@jwilleke/ngdpbase-types/testing';
 import AccommodationAddon from '../index.js';
 import AccommodationPlugin from '../plugins/AccommodationPlugin.js';
+import { SAMPLE_ACCOMMODATIONS, SAMPLE_USERS } from './fixtures.js';
 
 const defaults = JSON.parse(readFileSync(new URL('../config/default-config.json', import.meta.url), 'utf8')) as Record<string, unknown>;
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { ngdpbase: { slug: string } };
@@ -47,8 +48,22 @@ describe('accommodation register()', () => {
     expect(engine.plugins.get('Accommodation')).toBe(AccommodationPlugin);
     expect(engine.mounts).toEqual(['/api/accommodation']);
     expect(engine.capabilities).toEqual({ accommodation: true });
-    expect(AccommodationAddon.status()).toMatchObject({ healthy: true, records: 0 });
+    expect(await AccommodationAddon.status()).toMatchObject({ healthy: true, records: 0 });
     await AccommodationAddon.shutdown();
+  });
+
+  test('status() names the accommodations with no current owner, read as the system principal', async () => {
+    const engine = fakeEngine();
+    const asked: unknown[] = [];
+    engine.managers.set('UserManager', { searchUsers: async (_q: string, _o: unknown, ctx: unknown) => { asked.push(ctx); return SAMPLE_USERS; } });
+    writeFileSync(path.join(dataPath, 'accommodations.json'), JSON.stringify(SAMPLE_ACCOMMODATIONS));
+    await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
+    const status = await AccommodationAddon.status();
+    expect(status.message).toBe('3 accommodation(s) loaded; 1 with no current owner: 66-00003.000');
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ reason: 'accommodation: status, accommodations with no current owner' });
+    await AccommodationAddon.shutdown();
+    expect(await AccommodationAddon.status()).toMatchObject({ healthy: false });
   });
 
   test('the plugin escapes what it is given', () => {

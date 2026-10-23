@@ -1,19 +1,25 @@
 /**
- * Dated owner and occupant links, kept on the ngdpbase user record as the
- * extended field `condoUnits` (https://github.com/jwilleke/ngdpbase-addons/issues/15),
- * until it becomes OwnershipInfo and Role (#21):
+ * Dated owner and occupant links, kept on the ngdpbase user record as two extended
+ * fields in schema.org shapes (https://github.com/jwilleke/ngdpbase-addons/issues/21):
  *
- *   "condoUnits": [
- *     { "parcel": "66-00001.000", "type": "owner",    "from": "2012-05-01", "to": "2020-08-31" },
- *     { "parcel": "66-00002.000", "type": "occupant", "from": "2021-01-15", "to": "current" }
+ *   "ownership": [
+ *     { "typeOfGood": "66-00001.000", "ownedFrom": "2012-05-01", "ownedThrough": "2020-08-31", "share": 100 }
+ *   ],
+ *   "occupies": [
+ *     { "roleName": "occupant", "accommodation": "66-00002.000", "startDate": "2021-01-15", "endDate": "current" }
  *   ]
  *
- * `to` is an ISO date or the word "current", never null (operator, 2026-10-22).
- * A link that is not exactly this shape is reported, never guessed.
+ * `ownership` entries are OwnershipInfo: `typeOfGood` is the accommodation's parcel, and
+ * `share` is the owner's percent of it (joint owners' votes); on any date a unit's current
+ * owners add up to exactly 100. `occupies` entries are Role: `roleName` is "occupant" (agent
+ * and tenant later), `accommodation` the parcel (operator, 2026-10-23). An end is an ISO date
+ * or the word "current", never null (operator, 2026-10-22). An entry that is not exactly this
+ * shape is reported, never guessed.
  */
 
 export type LinkType = 'owner' | 'occupant';
 
+/** One link, whichever field it came from. */
 export interface UnitLink {
   parcel: string;
   type: LinkType;
@@ -21,6 +27,15 @@ export interface UnitLink {
   from: string;
   /** ISO date, or "current". */
   to: string;
+  /** An owner's percent of the unit; absent for an occupant. */
+  share?: number;
+}
+
+/** The fields this module reads from a user record. */
+export interface LinkFields {
+  username: string;
+  ownership?: unknown;
+  occupies?: unknown;
 }
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -40,29 +55,94 @@ export function localToday(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/** The day after an ISO date. */
+function nextDay(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** How one field's entries are read: its name, its link type, and the names of its parts. */
+interface FieldShape {
+  field: 'ownership' | 'occupies';
+  type: LinkType;
+  parcel: string;
+  from: string;
+  to: string;
+}
+
+const OWNERSHIP: FieldShape = { field: 'ownership', type: 'owner', parcel: 'typeOfGood', from: 'ownedFrom', to: 'ownedThrough' };
+const OCCUPIES: FieldShape = { field: 'occupies', type: 'occupant', parcel: 'accommodation', from: 'startDate', to: 'endDate' };
+
+function readField(username: string, value: unknown, shape: FieldShape, links: UnitLink[], problems: string[]): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) { problems.push(`${username}: ${shape.field} is not a list`); return; }
+  value.forEach((raw, i) => {
+    const where = `${username}: ${shape.field}[${i}]`;
+    const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    const parcel = r[shape.parcel];
+    const from = r[shape.from];
+    const to = r[shape.to];
+    if (shape.type === 'occupant' && r.roleName !== 'occupant') { problems.push(`${where}.roleName must be "occupant"`); return; }
+    if (typeof parcel !== 'string' || parcel === '') { problems.push(`${where} has no ${shape.parcel}`); return; }
+    if (!isIsoDate(from)) { problems.push(`${where}.${shape.from} must be a date YYYY-MM-DD`); return; }
+    if (to !== 'current' && !isIsoDate(to)) { problems.push(`${where}.${shape.to} must be a date YYYY-MM-DD or "current"`); return; }
+    if (to !== 'current' && to < from) { problems.push(`${where} ends (${to}) before it starts (${from})`); return; }
+    if (shape.type === 'owner') {
+      const share = r.share;
+      if (typeof share !== 'number' || !Number.isFinite(share) || share <= 0 || share > 100) {
+        problems.push(`${where}.share must be a percent above 0 and at most 100`); return;
+      }
+      links.push({ parcel, type: 'owner', from, to, share });
+      return;
+    }
+    links.push({ parcel, type: 'occupant', from, to });
+  });
+}
+
 /**
- * A user's links, and what is wrong with any that are not links. Each problem
- * names the user and the link's position, so an admin can find it.
+ * A user's links, and what is wrong with any entries that are not links. Each problem
+ * names the user, the field and the entry's position, so an admin can find it.
  */
-export function readLinks(username: string, value: unknown): { links: UnitLink[]; problems: string[] } {
+export function readLinks(user: LinkFields): { links: UnitLink[]; problems: string[] } {
   const links: UnitLink[] = [];
   const problems: string[] = [];
-  if (value === undefined) return { links, problems };
-  if (!Array.isArray(value)) return { links, problems: [`${username}: condoUnits is not a list`] };
-  value.forEach((raw, i) => {
-    const where = `${username}: condoUnits[${i}]`;
-    const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-    if (typeof r.parcel !== 'string' || r.parcel === '') { problems.push(`${where} has no parcel`); return; }
-    if (r.type !== 'owner' && r.type !== 'occupant') { problems.push(`${where}.type must be "owner" or "occupant"`); return; }
-    if (!isIsoDate(r.from)) { problems.push(`${where}.from must be a date YYYY-MM-DD`); return; }
-    if (r.to !== 'current' && !isIsoDate(r.to)) { problems.push(`${where}.to must be a date YYYY-MM-DD or "current"`); return; }
-    if (r.to !== 'current' && (r.to as string) < r.from) { problems.push(`${where} ends (${String(r.to)}) before it starts (${r.from})`); return; }
-    links.push({ parcel: r.parcel, type: r.type, from: r.from, to: r.to as string });
-  });
+  readField(user.username, user.ownership, OWNERSHIP, links, problems);
+  readField(user.username, user.occupies, OCCUPIES, links, problems);
   return { links, problems };
 }
 
 /** Whether the link holds on that date: started on or before it, and current or ended on or after it. */
 export function holdsOn(link: UnitLink, date: string): boolean {
   return link.from <= date && (link.to === 'current' || link.to >= date);
+}
+
+/**
+ * Every date on which a unit's current owners' shares do not add up to 100, one problem per
+ * date the owners change. Dates with no owner at all are not share problems.
+ */
+export function shareProblems(owners: Array<{ username: string; link: UnitLink }>): string[] {
+  const byParcel = new Map<string, Array<{ username: string; link: UnitLink }>>();
+  for (const o of owners) {
+    if (o.link.type !== 'owner') continue;
+    byParcel.set(o.link.parcel, [...(byParcel.get(o.link.parcel) ?? []), o]);
+  }
+  const problems: string[] = [];
+  for (const [parcel, entries] of [...byParcel].sort(([a], [b]) => a.localeCompare(b))) {
+    const changes = new Set<string>();
+    for (const { link } of entries) {
+      changes.add(link.from);
+      if (link.to !== 'current') changes.add(nextDay(link.to));
+    }
+    for (const date of [...changes].sort()) {
+      const holding = entries.filter(e => holdsOn(e.link, date));
+      if (holding.length === 0) continue;
+      const total = holding.reduce((t, e) => t + (e.link.share ?? 0), 0);
+      if (Math.abs(total - 100) > 1e-9) {
+        const who = holding.map(e => `${e.username} ${e.link.share}%`).sort().join(', ');
+        problems.push(`unit ${parcel}: owners' shares on ${date} add up to ${total}%, not 100% (${who})`);
+      }
+    }
+  }
+  return problems;
 }

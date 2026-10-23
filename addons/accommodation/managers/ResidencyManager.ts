@@ -2,10 +2,10 @@
  * ResidencyManager — who owns and who lives in each accommodation, and since when.
  * Registered on the engine as 'ResidencyManager'.
  *
- * The links live on the ngdpbase user records, as the extended field
- * `condoUnits` (https://github.com/jwilleke/ngdpbase-addons/issues/15,
- * unitLinks.ts), until they become OwnershipInfo and Role (#21); this manager
- * is their door. The accommodations themselves, and the billing parties kept on
+ * The links live on the ngdpbase user records, as the extended fields
+ * `ownership` (OwnershipInfo) and `occupies` (Role)
+ * (https://github.com/jwilleke/ngdpbase-addons/issues/21, unitLinks.ts); this
+ * manager is their door. The accommodations themselves, and the billing parties kept on
  * each, are AccommodationManager's; billing() reads them with the owners
  * (https://github.com/jwilleke/ngdpbase-addons/issues/14).
  *
@@ -15,7 +15,7 @@
  */
 import type { ActorContext } from '@jwilleke/ngdpbase-types';
 import type { Accommodation } from '../providers/AccommodationProvider.js';
-import { holdsOn, isIsoDate, localToday, readLinks, type LinkType, type UnitLink } from './unitLinks.js';
+import { holdsOn, isIsoDate, localToday, readLinks, shareProblems, type LinkType, type UnitLink } from './unitLinks.js';
 import { joinNames, readBillingParties, unitAddress, type PostalAddress } from './billing.js';
 
 /** A person on a unit: `username` is the ngdpbase account. */
@@ -32,7 +32,8 @@ export interface UserRecord {
   username: string;
   displayName?: string;
   email?: string;
-  condoUnits?: unknown;
+  ownership?: unknown;
+  occupies?: unknown;
   [key: string]: unknown;
 }
 
@@ -69,7 +70,7 @@ export default class ResidencyManager {
   private async linksTo(ctx: ActorContext, id: string): Promise<Array<{ user: UserRecord; link: UnitLink }>> {
     const found: Array<{ user: UserRecord; link: UnitLink }> = [];
     for (const user of await this.users(ctx)) {
-      for (const link of readLinks(user.username, user.condoUnits).links) {
+      for (const link of readLinks(user).links) {
         if (link.parcel === id) found.push({ user, link });
       }
     }
@@ -136,8 +137,31 @@ export default class ResidencyManager {
       .sort((a, b) => a.from.localeCompare(b.from) || a.username.localeCompare(b.username) || a.type.localeCompare(b.type));
   }
 
-  /** Every malformed link on any user record, each naming the user and the link; never guessed at. */
+  /**
+   * The units among `ids` with no owner on a date (today unless `on` is given), worked out
+   * from the dated links whenever asked: nothing is stored or scheduled (operator, 2026-10-23).
+   */
+  async withoutOwner(ctx: ActorContext, ids: string[], options: { on?: string } = {}): Promise<string[]> {
+    const date = options.on ?? this.today();
+    if (!isIsoDate(date)) throw new Error(`not a date YYYY-MM-DD: ${date}`);
+    const owned = new Set<string>();
+    for (const user of await this.users(ctx)) {
+      for (const link of readLinks(user).links) {
+        if (link.type === 'owner' && holdsOn(link, date)) owned.add(link.parcel);
+      }
+    }
+    return ids.filter(id => !owned.has(id));
+  }
+
+  /**
+   * Every malformed link on any user record, each naming the user and the entry, then every
+   * date a unit's owners' shares do not add up to 100; never guessed at.
+   */
   async linkProblems(ctx: ActorContext): Promise<string[]> {
-    return (await this.users(ctx)).flatMap(u => readLinks(u.username, u.condoUnits).problems);
+    const read = (await this.users(ctx)).map(u => ({ username: u.username, ...readLinks(u) }));
+    return [
+      ...read.flatMap(r => r.problems),
+      ...shareProblems(read.flatMap(r => r.links.map(link => ({ username: r.username, link }))))
+    ];
   }
 }

@@ -38,22 +38,22 @@ export const SAMPLE_ACCOMMODATIONS: Accommodation[] = [
 /** "Today" in the tests, so which links are current never depends on the day the tests run. */
 export const TEST_TODAY = '2026-10-22';
 
-/** Users as UserManager.searchUsers() gives them, with their dated links (#15). */
+/** Users as UserManager.searchUsers() gives them, with their dated links (#21). */
 export const SAMPLE_USERS: UserRecord[] = [
   { username: 'pat.example', displayName: 'Pat Example', email: 'pat@example.org',
-    condoUnits: [{ parcel: '66-00001.000', type: 'owner', from: '2015-06-01', to: 'current' }] },
-  { username: 'sam.example', displayName: 'Sam Example', condoUnits: [
-    { parcel: '66-00001.000', type: 'owner', from: '2015-06-01', to: 'current' },
-    { parcel: '66-00002.000', type: 'owner', from: '2020-03-01', to: 'current' }] },
+    ownership: [{ typeOfGood: '66-00001.000', ownedFrom: '2015-06-01', ownedThrough: 'current', share: 50 }] },
+  { username: 'sam.example', displayName: 'Sam Example', ownership: [
+    { typeOfGood: '66-00001.000', ownedFrom: '2015-06-01', ownedThrough: 'current', share: 50 },
+    { typeOfGood: '66-00002.000', ownedFrom: '2020-03-01', ownedThrough: 'current', share: 50 }] },
   { username: 'lee.renter', displayName: 'Lee Renter',
-    condoUnits: [{ parcel: '66-00001.000', type: 'occupant', from: '2023-02-01', to: 'current' }] },
-  { username: 'kim.both', condoUnits: [
-    { parcel: '66-00002.000', type: 'owner', from: '2020-03-01', to: 'current' },
-    { parcel: '66-00002.000', type: 'occupant', from: '2020-03-15', to: 'current' }] },
+    occupies: [{ roleName: 'occupant', accommodation: '66-00001.000', startDate: '2023-02-01', endDate: 'current' }] },
+  { username: 'kim.both',
+    ownership: [{ typeOfGood: '66-00002.000', ownedFrom: '2020-03-01', ownedThrough: 'current', share: 50 }],
+    occupies: [{ roleName: 'occupant', accommodation: '66-00002.000', startDate: '2020-03-15', endDate: 'current' }] },
   { username: 'old.owner', displayName: 'Old Owner',
-    condoUnits: [{ parcel: '66-00001.000', type: 'owner', from: '2008-01-10', to: '2015-05-31' }] },
+    ownership: [{ typeOfGood: '66-00001.000', ownedFrom: '2008-01-10', ownedThrough: '2015-05-31', share: 100 }] },
   { username: 'moving.in', displayName: 'Moving In',
-    condoUnits: [{ parcel: '66-00001.000', type: 'occupant', from: '2026-11-01', to: 'current' }] },
-  { username: 'broken.links', condoUnits: [{ parcel: '66-00001.000', type: 'owner', from: '2020-01-01', to: null }] },
+    occupies: [{ roleName: 'occupant', accommodation: '66-00001.000', startDate: '2026-11-01', endDate: 'current' }] },
+  { username: 'broken.links', ownership: [{ typeOfGood: '66-00001.000', ownedFrom: '2020-01-01', ownedThrough: null, share: 100 }] },
   { username: 'admin', displayName: 'Administrator' }
 ];

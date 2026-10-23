@@ -37,7 +37,7 @@ assessed.
 | How assessments are set | By unit type, for now (operator, 2026-10-22). Revisited 2026-10-23: The Fairways' Declaration sets percentage of interest (see below) | — |
 | Late charges | Site rules: days late, amount, simple annual interest, once or monthly; accounting applies them | [#10](https://github.com/jwilleke/ngdpbase-addons/issues/10) |
 | People | Every owner and occupant is an ngdpbase user; managers read users with the caller's context | [#11](https://github.com/jwilleke/ngdpbase-addons/issues/11) |
-| History | Dated links on the user record, `condoUnits: [{ parcel, type, from, to }]`, `to` a date or `"current"` | [#15](https://github.com/jwilleke/ngdpbase-addons/issues/15) |
+| History | Dated links on the user record: `ownership` (`OwnershipInfo`, with an ownership `share`) and `occupies` (`Role`), an end a date or `"current"` | [#21](https://github.com/jwilleke/ngdpbase-addons/issues/21) |
 | Billing | One invoice per billing address, kept on the unit as billing parties with shares | [#14](https://github.com/jwilleke/ngdpbase-addons/issues/14) |
 | How people are reached | Email, mail, text: a core preference per person | [ngdpbase#1969](https://github.com/jwilleke/ngdpbase/issues/1969) |
 | Permissions and roles | Their meaning: [addons/condo/docs/permissions.md](../../addons/condo/docs/permissions.md) | [#5](https://github.com/jwilleke/ngdpbase-addons/issues/5) |
