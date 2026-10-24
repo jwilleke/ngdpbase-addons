@@ -1,7 +1,7 @@
 ---
 title: TODO
 description: Priority bands and resume pointer for this repo.
-last_updated: "2026-10-23"
+last_updated: "2026-10-24"
 ---
 
 # TODO
@@ -56,7 +56,7 @@ last_updated: "2026-10-23"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-- [#29](https://github.com/jwilleke/ngdpbase-addons/issues/29) — [SECURITY] body-parser — DoS via trailing bytes after a compressed request body
+*None.*
 
 ## ⏸ Deferred
 
