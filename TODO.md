@@ -34,9 +34,11 @@ last_updated: "2026-10-24"
 
 ## 🟠 P1
 
+- [#35](https://github.com/jwilleke/ngdpbase-addons/issues/35) — [FEATURE] association: a signed-in owner or occupant's own-unit submission applies directly (#17d)
+- [#34](https://github.com/jwilleke/ngdpbase-addons/issues/34) — [FEATURE] association: approving a submission for someone new creates their account (#17c)
+- [#33](https://github.com/jwilleke/ngdpbase-addons/issues/33) — [FEATURE] association: review page, approve or reject a pending occupancy submission (#17b)
 - [#31](https://github.com/jwilleke/ngdpbase-addons/issues/31) — [FEATURE] accommodation: changeLink writes through updateUser's function form (one read-to-write step)
 - [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
-- [#25](https://github.com/jwilleke/ngdpbase-addons/issues/25) — [FEATURE] association: create the add-on (thin: The Fairways' rules as settings, on accommodation)
 - [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) — [FEATURE] accommodation: billing parties, charges and late-charge rules
 - [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) — [FEATURE] association: Occupancy information form (ORC 5311.09)
 - [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) — [FEATURE] accommodation: self-service: see your own accommodation, update your own details
@@ -54,7 +56,8 @@ last_updated: "2026-10-24"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#32](https://github.com/jwilleke/ngdpbase-addons/issues/32) — [FEATURE] association: Occupancy information form, every submission waits for review (#17a)
+- [#25](https://github.com/jwilleke/ngdpbase-addons/issues/25) — [FEATURE] association: create the add-on (thin: The Fairways' rules as settings, on accommodation)
 
 ## ⏸ Deferred
 
