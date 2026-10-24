@@ -93,8 +93,29 @@ the others and of any one site. Add-ons and plans are listed in [README.md](READ
   enables as it needs; epic [#19](https://github.com/jwilleke/ngdpbase-addons/issues/19), design in
   `docs/plans/condo-brainstorm.md`. `condo` is retired once they carry everything. Replaces
   `fairways-gen2-website/addons/fairways`; The Fairways is the reference site.
-- Add-on rules: ngdpbase `docs/guides/addons-developer-guide.md` and the guides it links.
 - Repo tooling follows [mjs-project-template](https://github.com/jwilleke/mjs-project-template).
+
+## Platform guides
+
+How to change an add-on is the guides in the platform checkout, the sibling
+`../ngdpbase/docs/guides/`. On this machine that directory is
+`/Volumes/hd2A/workspaces/github/ngdpbase/docs/guides/`. Open those files. Do not
+copy them into this repo.
+
+The instance below is a running checkout. Its `docs/guides` lags the platform.
+Read the rules from the sibling, not from the instance. If the sibling checkout
+is not on the machine, open the
+[guide index](https://github.com/jwilleke/ngdpbase/blob/master/docs/guides/README.md)
+on GitHub.
+
+Read the file the change touches, then follow that file.
+
+- Any add-on change: `addons-developer-guide.md`, including its standing rules and the section for what you are adding.
+- A route, manager method, job, permission, policy, or audit event: also `security-developer-guide.md` and `audit-developer-guide.md`. Run each guide's "How you know you are done" list.
+- Where pages, files, a database, or `dataPath` go: `storage-developer-guide.md`.
+- A configuration key: `configuration-developer-guide.md`.
+- A plugin whose output is on a page: `caching-developer-guide.md`.
+- Backup of add-on data: `backup-restore-guide.md`.
 
 ## Local ngdpbase
 
