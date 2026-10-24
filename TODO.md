@@ -34,7 +34,6 @@ last_updated: "2026-10-24"
 
 ## 🟠 P1
 
-- [#28](https://github.com/jwilleke/ngdpbase-addons/issues/28) — [FEATURE] accommodation: admin page records who owns and lives in each accommodation
 - [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
 - [#25](https://github.com/jwilleke/ngdpbase-addons/issues/25) — [FEATURE] association: create the add-on (accommodation + governance + Ohio 5311 profile)
 - [#24](https://github.com/jwilleke/ngdpbase-addons/issues/24) — [FEATURE] governance: create the add-on; members through a provider; board and officers
@@ -56,7 +55,7 @@ last_updated: "2026-10-24"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#28](https://github.com/jwilleke/ngdpbase-addons/issues/28) — [FEATURE] accommodation: admin page records who owns and lives in each accommodation
 
 ## ⏸ Deferred
 
