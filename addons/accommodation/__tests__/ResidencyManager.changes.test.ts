@@ -193,4 +193,13 @@ describe('ResidencyManager.changeLink (#28)', () => {
     const m = new ResidencyManager({ accommodation: () => undefined });
     await expect(m.changeLink(treasurer, 'admin', { op: 'remove', at: { type: 'owner', index: 0, expected: '' } })).rejects.toThrow('without its write side');
   });
+  test('checkEntry: the same refusals changeLink makes, without writing or asking anything', () => {
+    const m = open();
+    expect(m.checkEntry({ parcel: '66-00001.000', type: 'owner', from: '2026-10-01', to: 'current' })).toBeNull();
+    expect(m.checkEntry({ parcel: '66-00001.000', type: 'occupant', from: '2026-10-01', to: '2026-12-31' })).toBeNull();
+    expect(m.checkEntry({ parcel: '99-99999.000', type: 'owner', from: '2026-10-01', to: 'current' })).toBe('no accommodation 99-99999.000');
+    expect(m.checkEntry({ parcel: '66-00001.000', type: 'occupant', from: '2026-10-01', to: '2026-09-01' })).toContain('before it starts');
+    expect(m.checkEntry({ parcel: '66-00001.000', type: 'owner', from: 'soon', to: 'current' })).toContain('must be a date');
+    expect(order).toEqual([]);
+  });
 });

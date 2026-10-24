@@ -14,6 +14,12 @@
       "icon": "building",
       "color": "#6c757d"
     },
+    "accommodation-units-list": {
+      "description": "See the list of accommodations by street address, with no names: the unit choices on the Occupancy information form",
+      "label": "See the list of unit addresses",
+      "icon": "list",
+      "color": "#6c757d"
+    },
     "accommodation-manage": {
       "description": "Manage the accommodation add-on: accommodations, owners and the directory import",
       "label": "Manage accommodations",
@@ -66,6 +72,32 @@
       "actions": [
         "accommodation-read",
         "accommodation-manage"
+      ]
+    },
+    {
+      "id": "accommodation-units-list-access",
+      "name": "Accommodation: the list of unit addresses",
+      "description": "Every visitor and every user may see the units by street address, to pick their unit on a form. Addresses only, never names.",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "anonymous"
+        },
+        {
+          "type": "role",
+          "value": "vault-owner"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "accommodation-units-list"
       ]
     }
   ]

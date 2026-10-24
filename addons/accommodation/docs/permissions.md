@@ -20,6 +20,7 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 | Permission | Status | Day one |
 | --- | --- | --- |
 | [`accommodation-read`](#accommodation-read) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
+| [`accommodation-units-list`](#accommodation-units-list) | Built ([#32](https://github.com/jwilleke/ngdpbase-addons/issues/32)) | every visitor and every user |
 | [`accommodation-manage`](#accommodation-manage) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
 | [`accommodation-self`](#accommodation-self) | Planned ([#16](https://github.com/jwilleke/ngdpbase-addons/issues/16)) | every user, through `vault-owner` |
 | [`accommodation-review`](#accommodation-review) | Planned ([#17](https://github.com/jwilleke/ngdpbase-addons/issues/17)) | board |
@@ -36,6 +37,18 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   company.
 - __Checked:__ where a person asks: the add-on's routes and its plugin.
 - __Recorded:__ not yet. Reads are not audited today.
+
+### accommodation-units-list
+
+- __Lets a person:__ see the list of accommodations by street address, to pick their unit: the unit
+  choices on the Occupancy information form.
+- __Does not:__ show who owns or lives in any of them, or anything else about a unit. The label is the
+  street address only; the value is the parcel.
+- __Granted:__ in accommodation's own policy to the roles `anonymous` (every visitor) and `vault-owner`
+  (every user), the core pattern for "anyone" (settled with ngdpbase core, 2026-10-24).
+- __Checked:__ by `AccommodationManager.toFormOptions`, with the viewer's context; a "no" offers no
+  choices. The forms add-on asks again when the form is submitted.
+- __Recorded:__ no; it changes nothing.
 
 ### accommodation-manage
 

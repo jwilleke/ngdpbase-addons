@@ -17,7 +17,7 @@ const defaults = JSON.parse(readFileSync(new URL('../config/default-config.json'
 const host = buildAddonHost('accommodation', defaults);
 
 /** Who may do what, for the test's decision point. */
-const GRANTS: Record<string, string[]> = { treasurer: ['accommodation-read', 'accommodation-manage'], board: ['accommodation-read'] };
+const GRANTS: Record<string, string[]> = { treasurer: ['accommodation-read', 'accommodation-manage'], board: ['accommodation-read'], anonymous: ['accommodation-units-list'] };
 
 /** A person's context, as the session middleware writes the subject. */
 function contextFor(username: string): ActorContext {
@@ -165,5 +165,22 @@ describe('AccommodationManager', () => {
     const m = await open();
     await expect(m.upsert(treasurer, { id: '' })).rejects.toThrow('accommodation.id');
     expect(bumps).toBe(0);
+  });
+  test('toFormOptions: the units by street address, for a viewer who may see the list; none otherwise', async () => {
+    const m = await open();
+    expect(await m.toFormOptions({}, contextFor('anonymous'))).toEqual([
+      { value: '66-00001.000', label: '101 Sample Dr' },
+      { value: '66-00002.000', label: '103 Sample Dr' },
+      { value: '66-00003.000', label: '105 Sample Dr' }
+    ]);
+    // board holds accommodation-read but not the list permission: the decision point decides, not the roster right
+    expect(await m.toFormOptions({}, contextFor('board'))).toEqual([]);
+  });
+
+  test('toFormOptions labels a unit with no address by its parcel, and never names a person', async () => {
+    const m = await open([{ id: 'p-1' }, { ...SAMPLE_ACCOMMODATIONS[0] }]);
+    const options = await m.toFormOptions({}, contextFor('anonymous'));
+    expect(options).toEqual([{ value: '66-00001.000', label: '101 Sample Dr' }, { value: 'p-1', label: 'p-1' }]);
+    expect(JSON.stringify(options)).not.toMatch(/pat\.example|sam\.example|Pat Example|Sam Example/);
   });
 });

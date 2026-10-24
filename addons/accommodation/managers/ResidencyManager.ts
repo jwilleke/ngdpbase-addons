@@ -314,6 +314,17 @@ export default class ResidencyManager {
   }
 
   /**
+   * Why an entry with these values would be refused, or null: the checks changeLink makes
+   * (a known accommodation, real dates, an end not before the start), the owner's share
+   * aside. For a form that takes the entry now and adds it later, after review (#32).
+   */
+  checkEntry(entry: { parcel: string; type: LinkType; from: string; to: string }): string | null {
+    if (!this.accommodation(entry.parcel)) return `no accommodation ${entry.parcel}`;
+    const stored = storedEntry(entry.type === 'owner' ? { ...entry, share: 100 } : entry);
+    return 'problem' in stored ? stored.problem : null;
+  }
+
+  /**
    * Make one change to a person's links (#28), as the caller. Refused, with nothing written:
    * without `accommodation-manage` (AccommodationRefusedError, for ApiContext.enforceDeny);
    * a person or accommodation that does not exist, a malformed entry, or an entry that changed

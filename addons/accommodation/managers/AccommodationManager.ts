@@ -31,6 +31,7 @@ import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types
 import type { Accommodation, AccommodationProvider } from '../providers/AccommodationProvider.js';
 import type { AccommodationCategory } from './categories.js';
 import type { LateChargeRule } from './lateCharges.js';
+import { unitAddress } from './billing.js';
 
 export interface AccommodationAssessment {
   accommodationCategory: string;
@@ -166,6 +167,19 @@ export default class AccommodationManager {
    */
   lateCharges(): LateChargeRule[] {
     return this.lateChargeRules.map(r => ({ ...r }));
+  }
+
+  /**
+   * The accommodations as a form's choices (`optionsSource: fetch:AccommodationManager.toFormOptions()`,
+   * the Occupancy information form, #32): the parcel as the value, the street address as the
+   * label, never a person's name. Asked with the viewer's context for `accommodation-units-list`,
+   * which accommodation's own policy grants to every visitor and every user; a "no" offers none.
+   * The forms add-on asks again when the form is submitted, so a value not offered is refused.
+   */
+  async toFormOptions(_args: Record<string, string>, userContext: ActorContext): Promise<Array<{ value: string; label: string }>> {
+    const decision = await this.decide(userContext, { action: 'accommodation-units-list' });
+    if (!decision.permit) return [];
+    return this.list().map(a => ({ value: a.id, label: unitAddress(a)?.streetAddress ?? a.id }));
   }
 
   /** Adds the accommodation, or replaces the one with its id. Needs accommodation-manage; recorded first. */
