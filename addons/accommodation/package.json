@@ -14,7 +14,7 @@
     "node": ">=24.15.0"
   },
   "devDependencies": {
-    "@jwilleke/ngdpbase-types": "5.25.0",
+    "@jwilleke/ngdpbase-types": "5.26.0",
     "@types/express": "^5.0.0",
     "@types/node": "^24.19.1",
     "typescript": "^6.0.3",
@@ -23,7 +23,7 @@
   "ngdpbase": {
     "slug": "accommodation",
     "type": "additive",
-    "minVersion": "5.25.0"
+    "minVersion": "5.26.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
