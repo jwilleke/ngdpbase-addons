@@ -1,0 +1,41 @@
+{
+  "name": "@jwilleke/association-addon",
+  "version": "0.1.0",
+  "description": "A unit owners association's rules on top of accommodation, for ngdpbase",
+  "license": "Apache-2.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jwilleke/ngdpbase-addons.git",
+    "directory": "addons/association"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "devDependencies": {
+    "@jwilleke/ngdpbase-types": "5.26.0",
+    "@types/node": "^24.19.1",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
+  },
+  "ngdpbase": {
+    "slug": "association",
+    "type": "additive",
+    "minVersion": "5.26.0",
+    "aboutPage": "using-association"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
+    "test": "vitest run"
+  },
+  "files": [
+    "index.js",
+    "managers/*.js",
+    "forms/*.js",
+    "config/",
+    "pages/",
+    "README.md"
+  ]
+}

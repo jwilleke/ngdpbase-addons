@@ -1,0 +1,46 @@
+{
+  "_comment": "Defaults for the association add-on. A site overrides any key in its app-custom-config.json.",
+  "ngdpbase.addons.association.enabled": false,
+  "_comment_database": "Occupancy submissions waiting for review hold personal data (names, phones, addresses), so the database is encrypted and the add-on does not load without NGDPBASE_DATABASE_KEY (storage guide; #32). A site turns on ngdpbase.database.provider sqlite and sets the key itself.",
+  "ngdpbase.addons.association.database": { "owner": "association", "ledgerTable": "association_schema_migrations", "encrypt": "required" },
+  "ngdpbase.permissions.definitions": {
+    "association-review": {
+      "description": "Review what waits for the association's approval: Occupancy information submissions (ORC 5311.09)",
+      "label": "Review occupancy submissions",
+      "icon": "clipboard-check",
+      "color": "#6f42c1"
+    },
+    "occupancy-submit": {
+      "description": "An Occupancy information submission was received and kept for review; who sent it, the unit and the entry type, never the answers",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Occupancy information received for review"
+      }
+    }
+  },
+  "ngdpbase.access.policies": [
+    {
+      "id": "association-review-access",
+      "name": "Association: review",
+      "description": "Admins review occupancy submissions on day one. A site grants association-review to its board in its own policy.",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "association-review"
+      ]
+    }
+  ]
+}

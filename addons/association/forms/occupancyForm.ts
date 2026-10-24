@@ -3,14 +3,14 @@
  * what ORC 5311.09(A)(2) asks an association to collect for the unit owner and
  * every occupant, replacing The Fairways' Google form "Contact information".
  *
- * A definition for the forms add-on. It is registered, with the handler that
- * applies or queues each submission, once the dated owner and occupant links
- * (#15) exist. Every question is a plain field: the forms add-on has no
- * conditional fields, so the "if working" and "if an agent" fields are
- * optional and say so (operator, 2026-10-22).
+ * A definition for the forms add-on, registered by index.ts at every start
+ * (registerShippedForm) with the handler that keeps each submission for review
+ * (#32). Every question is a plain field: the forms add-on has no conditional
+ * fields, so the "if working" and "if an agent" fields are optional and say so
+ * (operator, 2026-10-22).
  */
 
-export const OCCUPANCY_FORM_ID = 'accommodation-occupancy';
+export const OCCUPANCY_FORM_ID = 'association-occupancy';
 
 export const occupancyForm = {
   id: OCCUPANCY_FORM_ID,

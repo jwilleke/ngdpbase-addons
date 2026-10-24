@@ -8,8 +8,8 @@ others and of any one site.
 | Add-on | Status | What it does |
 |---|---|---|
 | [accommodation](addons/accommodation/README.md) | in progress | Accommodations (units, houses, apartments), dated ownership and occupancy, billing parties, charges; no condo wording, a landlord can use it. The condo code moved in ([#20](https://github.com/jwilleke/ngdpbase-addons/issues/20)) |
-| governance | planned | Running a membership corporation: members, board and officers, meetings and votes |
-| association | planned | Condo and HOA: accommodation plus governance plus a statute profile (Ohio 5311 first) |
+| [association](addons/association/README.md) | in progress | A unit owners association's own rules on top of accommodation, each citing its source; thin to start, then the Occupancy information form ([#17](https://github.com/jwilleke/ngdpbase-addons/issues/17)) |
+| governance | deferred ([#24](https://github.com/jwilleke/ngdpbase-addons/issues/24)) | Running a membership corporation: members, board and officers, meetings and votes |
 | request-response | brainstorming | Requests with responses, statuses, owners and hand-offs: maintenance requests, board approvals, expense reimbursements, contact inquiries |
 
 ## Plans
