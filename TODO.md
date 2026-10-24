@@ -40,7 +40,6 @@ last_updated: "2026-10-24"
 - [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) — [FEATURE] accommodation: billing parties, charges and late-charge rules
 - [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) — [FEATURE] association: Occupancy information form (ORC 5311.09)
 - [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) — [FEATURE] accommodation: self-service: see your own accommodation, update your own details
-- [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) — [FEATURE] accommodation: raise minVersion once an ngdpbase release has #1985
 - [#12](https://github.com/jwilleke/ngdpbase-addons/issues/12) — [FEATURE] accommodation: move The Fairways' type, parcel and move-in dates onto OwnershipInfo and Role
 - [#8](https://github.com/jwilleke/ngdpbase-addons/issues/8) — [FEATURE] accommodation: directory CSV import with column map
 - [#7](https://github.com/jwilleke/ngdpbase-addons/issues/7) — [FEATURE] accommodation: `[{Accommodation}]` plugin
@@ -55,7 +54,9 @@ last_updated: "2026-10-24"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
+- [#30](https://github.com/jwilleke/ngdpbase-addons/issues/30) — [SECURITY] multer — DoS via a pending asynchronous fileFilter after request teardown
 - [#28](https://github.com/jwilleke/ngdpbase-addons/issues/28) — [FEATURE] accommodation: admin page records who owns and lives in each accommodation
+- [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) — [FEATURE] accommodation: raise minVersion once an ngdpbase release has #1985
 
 ## ⏸ Deferred
 
