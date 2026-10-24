@@ -54,9 +54,7 @@ last_updated: "2026-10-24"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-- [#30](https://github.com/jwilleke/ngdpbase-addons/issues/30) — [SECURITY] multer — DoS via a pending asynchronous fileFilter after request teardown
-- [#28](https://github.com/jwilleke/ngdpbase-addons/issues/28) — [FEATURE] accommodation: admin page records who owns and lives in each accommodation
-- [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) — [FEATURE] accommodation: raise minVersion once an ngdpbase release has #1985
+*None.*
 
 ## ⏸ Deferred
 
