@@ -156,6 +156,19 @@ implies are not made yet: `CondoUnitManager` to `AccommodationManager`, `[{Condo
 `[{Accommodation}]`, the user field `condoUnits` to an `OwnershipInfo`/`Role`-shaped link list,
 `condo-*` permissions to `accommodation-*`, the unit field `unitType` to `accommodationCategory`.
 
+__Decided (operator, 2026-10-24): a working framework first, then iterate; depth comes later.__ The
+three add-ons stay, smaller to start:
+
+- `association` starts thin: The Fairways' own rules as settings, each citing where it comes from
+  (ORC 5311, the Declaration, the Bylaws, a board rule). No statute profiles and no checking a
+  setting against a statute's limits yet. Ohio 5311 is not the only law that applies, and turning
+  laws into profiles waits until a second site shows what they need ("Governing documents as data"
+  below is that later depth).
+- `association` depends on `accommodation` only for now. It hosts the Occupancy information form
+  ([#17](https://github.com/jwilleke/ngdpbase-addons/issues/17)) as soon as it exists.
+- `governance` waits until board work is needed. Board and officer terms also wait on core's dated
+  affiliations ([ngdpbase#2003](https://github.com/jwilleke/ngdpbase/issues/2003)).
+
 ### Governing documents as data
 
 Every Ohio condo sits in the same stack: federal law, Ohio law (ORC 5311, 5312, 1702), local rules,
