@@ -140,10 +140,11 @@ describe('ResidencyManager', () => {
 
   describe('reconcileRoles: the owner and occupant roles follow the facts (#23)', () => {
     /** A stand-in RoleManager: who holds what, and every change it was asked for, with the context. */
+    const holdsCtx: unknown[] = [];
     function roleDoor(held: Record<string, string[]>) {
       const calls: Array<[string, string, string, unknown]> = [];
       const door: RoleDoor = {
-        holds: async (u, r) => (held[u] ?? []).includes(r),
+        holds: async (c, u, r) => { holdsCtx.push(c); return (held[u] ?? []).includes(r); },
         assign: async (u, r, c) => { calls.push(['assign', u, r, c]); held[u] = [...(held[u] ?? []), r]; },
         remove: async (u, r, c) => { calls.push(['remove', u, r, c]); held[u] = (held[u] ?? []).filter(x => x !== r); }
       };
@@ -165,6 +166,7 @@ describe('ResidencyManager', () => {
         { username: 'old.owner', role: 'owner' } // sold in 2015
       ]);
       expect(calls.every(c => c[3] === ctx)).toBe(true); // every change is made as the caller
+      expect(holdsCtx.length > 0 && holdsCtx.every(c => c === ctx)).toBe(true); // and every lookup asks as the caller (ngdpbase 5.28.0)
     });
 
     test('a second run changes nothing', async () => {

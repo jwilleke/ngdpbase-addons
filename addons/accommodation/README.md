@@ -90,14 +90,14 @@ Each change goes through `ResidencyManager.changeLink(ctx, username, change)`:
 - It records `accommodation-manage` before it writes (on-failure `refuse`), naming the accommodation,
   the person, the field and the names of the fields changed, never their values. A write that then
   fails is recorded as a failure.
-- It writes the one field onto the person's account through `UserManager.updateUser`, as the caller.
+- It writes the one field onto the person's account through `UserManager.updateUser`, as the caller,
+  reading the person's current entries inside that write.
 - Then it starts the roles job (below) as the admin who made the change, so the roles follow it now
   rather than at the next daily run. The job is the one place roles change.
 
-Known gap: two admins changing the same person's entries at the same moment can lose one change. The
-read and the write are not one step, because core has no door for that yet
-([ngdpbase#2025](https://github.com/jwilleke/ngdpbase/issues/2025)). Each change still checks that
-the entry it changes is what the page showed.
+Two admins changing the same person's entries at the same moment both stand: the list is read and
+written in one step per account, through `UserManager.updateUser`'s function form (ngdpbase 5.28.0,
+[ngdpbase#2025](https://github.com/jwilleke/ngdpbase/issues/2025)).
 
 ## Owner and occupant roles
 

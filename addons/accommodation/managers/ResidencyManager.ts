@@ -16,7 +16,8 @@
  * Changes to the links go through changeLink (#28), the enforcement point: it asks the
  * decision point for `accommodation-manage` with the caller's context, refuses a malformed
  * entry with the reason, records `accommodation-manage` before it writes (on-failure refuse),
- * writes the one field through UserManager.updateUser as the caller, and then asks for the
+ * writes the one field through UserManager.updateUser's function form as the caller (one step
+ * from read to write per account, ngdpbase#2025), and then asks for the
  * roles job to run, as the caller, so the roles follow the new entries. The job is the one
  * place roles change (#23): it is retried, recorded and reported by the job manager, and it
  * keeps the add-on to its one call of the context-free RoleManager.hasRole (ngdpbase#2018).
@@ -51,7 +52,7 @@ export interface UserRecord {
  * `remove` change and record the change as the caller.
  */
 export interface RoleDoor {
-  holds(username: string, role: LinkType): Promise<boolean>;
+  holds(ctx: ActorContext, username: string, role: LinkType): Promise<boolean>;
   assign(username: string, role: LinkType, ctx: ActorContext): Promise<void>;
   remove(username: string, role: LinkType, ctx: ActorContext): Promise<void>;
 }
@@ -85,8 +86,11 @@ export class LinkChangeRefusedError extends Error {
   override readonly name = 'LinkChangeRefusedError';
 }
 
-/** Whether changeLink changed anything: a correction to what is already there changes nothing. */
-export interface LinkChangeResult { changed: boolean }
+/**
+ * Whether changeLink changed anything (a correction to what is already there changes nothing),
+ * and for an added entry where it is, so a caller can end or remove it later (#33's undo).
+ */
+export interface LinkChangeResult { changed: boolean; at?: EntryRef }
 
 /** Every entry naming one unit, with the person it is on, as the admin page shows it. */
 export interface UnitEntry extends UnitMember { type: LinkType; index: number; expected: string; link?: UnitLink; problem?: string }
@@ -99,8 +103,11 @@ export interface ResidencyChanges {
   recordAudit: (record: AccommodationAuditRecord) => Promise<void>;
   /** ngdpbase's host: actorOf and the audit event names. */
   host: Pick<AddonHost, 'actorOf' | 'addonAuditEventName'>;
-  /** UserManager.updateUser: writes the fields given onto the account, as the caller. */
-  updateUser: (username: string, fields: Record<string, unknown>, ctx: ActorContext) => Promise<unknown>;
+  /**
+   * UserManager.updateUser's function form, as the caller: `update` gets the account as it is now,
+   * inside the account's own key, and returns the fields to write, or undefined for none.
+   */
+  updateUser: (username: string, update: (current: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>, ctx: ActorContext) => Promise<unknown>;
   /**
    * After a change is saved: start the roles job as the caller, so the roles follow it now
    * rather than at the next daily run. Absent, the daily run is when they follow. It must
@@ -258,7 +265,7 @@ export default class ResidencyManager {
       const { links, unreadable } = readLinks(user);
       for (const role of ['owner', 'occupant'] as const) {
         const should = links.some(l => l.type === role && holdsOn(l, today));
-        const has = await roles.holds(user.username, role);
+        const has = await roles.holds(ctx, user.username, role);
         if (should === has) continue;
         if (!should && unreadable.includes(role)) { result.leftAlone.push({ username: user.username, role }); continue; }
         const change = should ? 'assign' : 'remove';
@@ -339,37 +346,45 @@ export default class ResidencyManager {
     const decision = await changes.decide(ctx, { action: 'accommodation-manage' });
     if (!decision.permit) throw new AccommodationRefusedError('accommodation-manage', decision);
 
-    const user = (await this.users(ctx)).find(u => u.username === username);
-    if (!user) throw new LinkChangeRefusedError(`no account named ${username}`);
+    if (!(await this.users(ctx)).some(u => u.username === username)) throw new LinkChangeRefusedError(`no account named ${username}`);
     const type = change.op === 'add' || change.op === 'correct' ? change.link.type : change.at.type;
     const field = fieldOf(type);
-    const current = user[field];
-    if (current !== undefined && !Array.isArray(current)) throw new LinkChangeRefusedError(`${username}: ${field} is not a list; it has to be fixed on the account first`);
-    const list: unknown[] = [...(current ?? [])];
-
-    const planned = this.plan(username, field, list, change);
-    if (!planned) return { changed: false };
-
     const { metadata: whoMetadata, ...who } = changes.host.actorOf(ctx);
+    let planned: { next: unknown[]; parcel: string; fields: string[] } | null = null;
     const record = (result: 'success' | 'failure', reason?: string): AccommodationAuditRecord => ({
       eventType: changes.host.addonAuditEventName('accommodation-manage'),
       ...who,
       result,
-      action: `${type}-${change.op}`, severity: 'medium', resource: planned.parcel, resourceType: 'accommodation',
-      metadata: { ...whoMetadata, username, owner: username, field, fields: planned.fields, ...(reason ? { reason } : {}) }
+      action: `${type}-${change.op}`, severity: 'medium', resource: planned?.parcel ?? '', resourceType: 'accommodation',
+      metadata: { ...whoMetadata, username, owner: username, field, fields: planned?.fields ?? [], ...(reason ? { reason } : {}) }
     });
-    // on-failure refuse: no record, no change.
-    await changes.recordAudit(record('success'));
+
+    // One step from read to write (ngdpbase#2025, 5.28.0): the list is read from the account as it
+    // is now, inside its own key, so a change made at the same moment is never lost. A refusal or a
+    // record that cannot be written throws inside, and nothing is written.
+    let recorded = false;
     try {
-      await changes.updateUser(username, { [field]: planned.next }, ctx);
+      await changes.updateUser(username, async (current) => {
+        const value = current[field];
+        if (value !== undefined && !Array.isArray(value)) throw new LinkChangeRefusedError(`${username}: ${field} is not a list; it has to be fixed on the account first`);
+        planned = this.plan(username, field, [...(value ?? [])], change);
+        if (!planned) return undefined;
+        // on-failure refuse: no record, no change.
+        await changes.recordAudit(record('success'));
+        recorded = true;
+        return { [field]: planned.next };
+      }, ctx);
     } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      await changes.recordAudit(record('failure', reason)).catch(() => undefined);
+      if (recorded) await changes.recordAudit(record('failure', err instanceof Error ? err.message : String(err))).catch(() => undefined);
       throw err;
     }
+    const done = planned as { next: unknown[] } | null;
+    if (!done) return { changed: false };
 
     await changes.followRoles?.(ctx);
-    return { changed: true };
+    if (change.op !== 'add') return { changed: true };
+    const index = done.next.length - 1;
+    return { changed: true, at: { type, index, expected: JSON.stringify(done.next[index]) } };
   }
 
   /**

@@ -38,7 +38,7 @@ interface ConfigurationManagerLike { resolveDataPath(p: string): string }
 interface CacheManagerLike { bump(topic: string): Promise<unknown> }
 interface PolicyDecisionPointLike { decide(subject: unknown, request: { action: string }): Promise<Decision> }
 interface RoleManagerLike {
-  hasRole(username: string, roleName: string): Promise<boolean>;
+  hasRole(ctx: ActorContext, username: string, roleName: string): Promise<boolean>;
   assignRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean>;
   removeRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean>;
 }
@@ -51,7 +51,7 @@ interface BackgroundJobManagerLike {
 }
 interface UserManagerLike {
   searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<UserRecord[]>;
-  updateUser(username: string, updates: Record<string, unknown>, ctx: ActorContext): Promise<unknown>;
+  updateUser(username: string, updates: (current: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>, ctx: ActorContext): Promise<unknown>;
 }
 interface AddonsManagerLike {
   registerDashboardCard(card: { addonName: string; title: string; icon: string; adminUrl: string }): void;
@@ -122,7 +122,7 @@ const AccommodationAddon = {
       // The admin page's changes (#28): the entries are written onto the account through UserManager.
       changes: {
         decide, recordAudit, host,
-        updateUser: (username, fields, ctx) => userManager().updateUser(username, fields, ctx),
+        updateUser: (username, update, ctx) => userManager().updateUser(username, update, ctx),
         // The roles job runs now, as the admin who made the change; the job manager retries,
         // records and reports it. A job that cannot even start is logged; the daily run follows.
         ...(rolesJob ? {
@@ -143,7 +143,7 @@ const AccommodationAddon = {
     // and takes the roles the dates bring, and a missed day runs at start-up.
     if (roleManager && jobs) {
       const roles: RoleDoor = {
-        holds: (username, role) => roleManager.hasRole(username, role),
+        holds: (ctx, username, role) => roleManager.hasRole(ctx, username, role),
         assign: async (username, role, ctx) => { await roleManager.assignRole(username, role, ctx); },
         remove: async (username, role, ctx) => { await roleManager.removeRole(username, role, ctx); }
       };

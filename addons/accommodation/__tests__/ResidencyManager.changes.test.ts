@@ -46,10 +46,13 @@ describe('ResidencyManager.changeLink (#28)', () => {
           order.push(`audit:${record.result ?? 'success'}`);
           audits.push(record);
         },
-        updateUser: async (username, fields, ctx) => {
+        // UserManager.updateUser's function form: the update gets the account as stored now.
+        updateUser: async (username, update, ctx) => {
+          expect(ctx).toBe(treasurer); // written as the caller
+          const fields = await update(structuredClone(users.find(u => u.username === username)!) as Record<string, unknown>);
+          if (!fields) return;
           if (writeFails) throw new Error('disk full');
           order.push('write');
-          expect(ctx).toBe(treasurer); // written as the caller
           users = users.map(u => (u.username === username ? { ...u, ...fields } : u));
         },
         followRoles: async (c) => { order.push('roles-job'); followed.push(c); }
@@ -74,8 +77,11 @@ describe('ResidencyManager.changeLink (#28)', () => {
       metadata: { username: 'admin', owner: 'admin', field: 'ownership', fields: ['ownedFrom', 'ownedThrough', 'share', 'typeOfGood'] }
     });
     expect(JSON.stringify(audits[0])).not.toContain('2026-10-01'); // names, never values
-    expect(result).toEqual({ changed: true });
+    expect(result).toEqual({ changed: true, at: { type: 'owner', index: 0, expected: JSON.stringify((ownershipOf('admin') as unknown[])[0]) } });
     expect(followed).toEqual([treasurer]);
+    // where it landed is enough to remove it again
+    await open().changeLink(treasurer, 'admin', { op: 'remove', at: result.at! });
+    expect(ownershipOf('admin')).toEqual([]);
   });
 
   test('ends a current occupancy on a date', async () => {
@@ -201,5 +207,27 @@ describe('ResidencyManager.changeLink (#28)', () => {
     expect(m.checkEntry({ parcel: '66-00001.000', type: 'occupant', from: '2026-10-01', to: '2026-09-01' })).toContain('before it starts');
     expect(m.checkEntry({ parcel: '66-00001.000', type: 'owner', from: 'soon', to: 'current' })).toContain('must be a date');
     expect(order).toEqual([]);
+  });
+  test('two changes to one person at the same moment both stand: the list is read inside the write (ngdpbase#2025)', async () => {
+    // A stand-in for core's per-account key: one update at a time, each reading the account as stored then.
+    let queue = Promise.resolve();
+    const m = new ResidencyManager({
+      users: async () => structuredClone(users), accommodation: () => SAMPLE_ACCOMMODATIONS[2], today: () => TEST_TODAY,
+      changes: {
+        host, decide: async () => ({ permit: true, applicable: true, reason: 'test' }), recordAudit: async () => undefined,
+        updateUser: (username, update) => {
+          const run = queue.then(async () => {
+            const fields = await update(structuredClone(users.find(u => u.username === username)!) as Record<string, unknown>);
+            await new Promise(r => setTimeout(r, 5));
+            if (fields) users = users.map(u => (u.username === username ? { ...u, ...fields } : u));
+          });
+          queue = run.catch(() => undefined);
+          return run;
+        }
+      }
+    });
+    const add = (from: string) => m.changeLink(treasurer, 'admin', { op: 'add', link: { parcel: '66-00003.000', type: 'occupant', from, to: 'current' } });
+    await Promise.all([add('2026-01-01'), add('2026-02-01')]);
+    expect((occupiesOf('admin') as Array<{ startDate: string }>).map(e => e.startDate)).toEqual(['2026-01-01', '2026-02-01']);
   });
 });
