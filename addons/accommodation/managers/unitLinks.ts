@@ -38,6 +38,18 @@ export interface LinkFields {
   occupies?: unknown;
 }
 
+/**
+ * One entry of a user's `ownership` or `occupies` list, by its place in the list, as stored
+ * (`raw`): the link it reads as, or the problem that stops it being one.
+ */
+export interface LinkEntry {
+  type: LinkType;
+  index: number;
+  raw: unknown;
+  link?: UnitLink;
+  problem?: string;
+}
+
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** A real calendar date written YYYY-MM-DD. */
@@ -73,34 +85,51 @@ interface FieldShape {
 
 const OWNERSHIP: FieldShape = { field: 'ownership', type: 'owner', parcel: 'typeOfGood', from: 'ownedFrom', to: 'ownedThrough' };
 const OCCUPIES: FieldShape = { field: 'occupies', type: 'occupant', parcel: 'accommodation', from: 'startDate', to: 'endDate' };
+const SHAPES: Record<LinkType, FieldShape> = { owner: OWNERSHIP, occupant: OCCUPIES };
 
-/** Reads one field's entries into `links`, and returns how many problems it added. */
-function readField(username: string, value: unknown, shape: FieldShape, links: UnitLink[], problems: string[]): number {
-  const before = problems.length;
-  if (value === undefined) return 0;
-  if (!Array.isArray(value)) { problems.push(`${username}: ${shape.field} is not a list`); return 1; }
-  value.forEach((raw, i) => {
-    const where = `${username}: ${shape.field}[${i}]`;
-    const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-    const parcel = r[shape.parcel];
-    const from = r[shape.from];
-    const to = r[shape.to];
-    if (shape.type === 'occupant' && r.roleName !== 'occupant') { problems.push(`${where}.roleName must be "occupant"`); return; }
-    if (typeof parcel !== 'string' || parcel === '') { problems.push(`${where} has no ${shape.parcel}`); return; }
-    if (!isIsoDate(from)) { problems.push(`${where}.${shape.from} must be a date YYYY-MM-DD`); return; }
-    if (to !== 'current' && !isIsoDate(to)) { problems.push(`${where}.${shape.to} must be a date YYYY-MM-DD or "current"`); return; }
-    if (to !== 'current' && to < from) { problems.push(`${where} ends (${to}) before it starts (${from})`); return; }
-    if (shape.type === 'owner') {
-      const share = r.share;
-      if (typeof share !== 'number' || !Number.isFinite(share) || share <= 0 || share > 100) {
-        problems.push(`${where}.share must be a percent above 0 and at most 100`); return;
-      }
-      links.push({ parcel, type: 'owner', from, to, share });
-      return;
-    }
-    links.push({ parcel, type: 'occupant', from, to });
-  });
-  return problems.length - before;
+/** The user-record field that holds a link type's entries. */
+export function fieldOf(type: LinkType): 'ownership' | 'occupies' {
+  return SHAPES[type].field;
+}
+
+/** One stored entry as a link, or the problem that stops it being one; `where` names it in the problem. */
+function readEntry(raw: unknown, shape: FieldShape, where: string): { link: UnitLink } | { problem: string } {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const parcel = r[shape.parcel];
+  const from = r[shape.from];
+  const to = r[shape.to];
+  if (shape.type === 'occupant' && r.roleName !== 'occupant') return { problem: `${where}.roleName must be "occupant"` };
+  if (typeof parcel !== 'string' || parcel === '') return { problem: `${where} has no ${shape.parcel}` };
+  if (!isIsoDate(from)) return { problem: `${where}.${shape.from} must be a date YYYY-MM-DD` };
+  if (to !== 'current' && !isIsoDate(to)) return { problem: `${where}.${shape.to} must be a date YYYY-MM-DD or "current"` };
+  if (to !== 'current' && to < from) return { problem: `${where} ends (${to}) before it starts (${from})` };
+  if (shape.type === 'occupant') return { link: { parcel, type: 'occupant', from, to } };
+  const share = r.share;
+  if (typeof share !== 'number' || !Number.isFinite(share) || share <= 0 || share > 100) {
+    return { problem: `${where}.share must be a percent above 0 and at most 100` };
+  }
+  return { link: { parcel, type: 'owner', from, to, share } };
+}
+
+/** One field's entries, each read on its own; a field that is not a list is one problem for the whole field. */
+function readField(username: string, value: unknown, shape: FieldShape): { entries: LinkEntry[]; fieldProblem?: string } {
+  if (value === undefined) return { entries: [] };
+  if (!Array.isArray(value)) return { entries: [], fieldProblem: `${username}: ${shape.field} is not a list` };
+  return {
+    entries: value.map((raw, index) => ({ type: shape.type, index, raw, ...readEntry(raw, shape, `${username}: ${shape.field}[${index}]`) }))
+  };
+}
+
+/**
+ * Every entry of a user's two fields, read or not, in field order then list order; `problems`
+ * names a field that is not a list at all. What readLinks and the change doors build on.
+ */
+export function readEntries(user: LinkFields): { entries: LinkEntry[]; problems: string[] } {
+  const read = [OWNERSHIP, OCCUPIES].map(shape => readField(user.username, user[shape.field], shape));
+  return {
+    entries: read.flatMap(r => r.entries),
+    problems: read.flatMap(r => (r.fieldProblem ? [r.fieldProblem] : []))
+  };
 }
 
 /**
@@ -113,9 +142,28 @@ export function readLinks(user: LinkFields): { links: UnitLink[]; problems: stri
   const links: UnitLink[] = [];
   const problems: string[] = [];
   const unreadable: LinkType[] = [];
-  if (readField(user.username, user.ownership, OWNERSHIP, links, problems) > 0) unreadable.push('owner');
-  if (readField(user.username, user.occupies, OCCUPIES, links, problems) > 0) unreadable.push('occupant');
+  for (const shape of [OWNERSHIP, OCCUPIES]) {
+    const { entries, fieldProblem } = readField(user.username, user[shape.field], shape);
+    const found = [...(fieldProblem ? [fieldProblem] : []), ...entries.flatMap(e => (e.problem ? [e.problem] : []))];
+    links.push(...entries.flatMap(e => (e.link ? [e.link] : [])));
+    problems.push(...found);
+    if (found.length > 0) unreadable.push(shape.type);
+  }
   return { links, problems, unreadable };
+}
+
+/**
+ * A link as it is stored on the user record (unitLinks' header): `ownership` as OwnershipInfo,
+ * `occupies` as Role. The stored shape is checked by readEntry, so what is written reads back
+ * as the same link or is refused with the reason.
+ */
+export function storedEntry(link: UnitLink): { entry: Record<string, unknown> } | { problem: string } {
+  const shape = SHAPES[link.type];
+  const entry: Record<string, unknown> = link.type === 'owner'
+    ? { [shape.parcel]: link.parcel, [shape.from]: link.from, [shape.to]: link.to, share: link.share }
+    : { roleName: 'occupant', [shape.parcel]: link.parcel, [shape.from]: link.from, [shape.to]: link.to };
+  const read = readEntry(entry, shape, shape.field);
+  return 'problem' in read ? { problem: read.problem } : { entry };
 }
 
 /** Whether the link holds on that date: started on or before it, and current or ended on or after it. */

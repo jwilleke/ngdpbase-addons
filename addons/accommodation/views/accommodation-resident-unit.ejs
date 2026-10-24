@@ -1,0 +1,123 @@
+<%- include('header', { title: 'Owners and occupants: ' + parcel, currentUser }) %>
+
+<% var action = '/addons/accommodation/residents/' + encodeURIComponent(parcel) + '/change'; %>
+<div class="container-fluid mt-4">
+  <p class="mb-1"><a href="/addons/accommodation/residents"><i class="fas fa-arrow-left me-1"></i>Owners and occupants</a></p>
+  <h2 class="mb-3"><i class="fas fa-house-user me-2"></i><%= parcel %></h2>
+
+  <% if (flash === 'saved') { %>
+    <div class="alert alert-success" data-testid="flash-saved">Saved. The owner and occupant roles follow it when the roles job has run (Admin → Scheduled Jobs).</div>
+  <% } else if (flash === 'unchanged') { %>
+    <div class="alert alert-info" data-testid="flash-unchanged">Nothing to change.</div>
+  <% } else if (flash === 'refused') { %>
+    <div class="alert alert-danger" data-testid="flash-refused">Not saved: <%= reason %></div>
+  <% } %>
+
+  <% if (shareProblems.length > 0) { %>
+    <div class="alert alert-warning" data-testid="share-problems">
+      <ul class="mb-0"><% shareProblems.forEach(function (p) { %><li><%= p %></li><% }) %></ul>
+    </div>
+  <% } %>
+
+  <h4>Entries</h4>
+  <% if (entries.length === 0) { %>
+    <p class="text-muted">Nobody owns or lives in this accommodation yet.</p>
+  <% } else { %>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Person</th><th>As</th><th>From</th><th>Through</th><th>Share</th><th>Change</th></tr></thead>
+        <tbody>
+          <% entries.forEach(function (e) { %>
+            <tr>
+              <td><%= e.name %> <span class="text-muted small">(<%= e.username %>)</span></td>
+              <td><%= e.type %></td>
+              <% if (e.link) { %>
+                <td><%= e.link.from %></td>
+                <td><%= e.link.to %></td>
+                <td><%= e.type === 'owner' ? e.link.share + '%' : '' %></td>
+              <% } else { %>
+                <td colspan="3" class="text-danger"><%= e.problem %></td>
+              <% } %>
+              <td>
+                <% if (e.link && e.link.to === 'current') { %>
+                  <form method="POST" action="<%= action %>" class="d-flex gap-1 mb-1">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="op" value="end">
+                    <input type="hidden" name="username" value="<%= e.username %>">
+                    <input type="hidden" name="type" value="<%= e.type %>">
+                    <input type="hidden" name="index" value="<%= e.index %>">
+                    <input type="hidden" name="expected" value="<%= e.expected %>">
+                    <input type="date" name="on" class="form-control form-control-sm" required aria-label="Last day">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">End</button>
+                  </form>
+                <% } %>
+                <details>
+                  <summary class="small">Correct or remove</summary>
+                  <form method="POST" action="<%= action %>" class="row g-1 mt-1">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="op" value="correct">
+                    <input type="hidden" name="username" value="<%= e.username %>">
+                    <input type="hidden" name="type" value="<%= e.type %>">
+                    <input type="hidden" name="index" value="<%= e.index %>">
+                    <input type="hidden" name="expected" value="<%= e.expected %>">
+                    <div class="col-auto"><input type="date" name="from" class="form-control form-control-sm" value="<%= e.link ? e.link.from : '' %>" required aria-label="From"></div>
+                    <div class="col-auto"><input type="text" name="to" class="form-control form-control-sm" value="<%= e.link ? e.link.to : 'current' %>" required aria-label="Through: a date YYYY-MM-DD or current"></div>
+                    <% if (e.type === 'owner') { %>
+                      <div class="col-auto"><input type="number" name="share" class="form-control form-control-sm" min="0.01" max="100" step="any" value="<%= e.link ? e.link.share : '' %>" required aria-label="Share, percent"></div>
+                    <% } %>
+                    <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Correct</button></div>
+                  </form>
+                  <form method="POST" action="<%= action %>" class="mt-1">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="op" value="remove">
+                    <input type="hidden" name="username" value="<%= e.username %>">
+                    <input type="hidden" name="type" value="<%= e.type %>">
+                    <input type="hidden" name="index" value="<%= e.index %>">
+                    <input type="hidden" name="expected" value="<%= e.expected %>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove (entered by mistake)</button>
+                  </form>
+                </details>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+
+  <h4 class="mt-4">Add an entry</h4>
+  <form method="POST" action="<%= action %>" class="row g-2 align-items-end" data-testid="add-entry">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="op" value="add">
+    <div class="col-auto">
+      <label class="form-label small" for="add-username">Person (username)</label>
+      <input type="text" id="add-username" name="username" class="form-control form-control-sm" list="people" required>
+      <datalist id="people">
+        <% people.forEach(function (p) { %><option value="<%= p.username %>"><%= p.name %></option><% }) %>
+      </datalist>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small" for="add-type">As</label>
+      <select id="add-type" name="type" class="form-select form-select-sm">
+        <option value="owner">owner</option>
+        <option value="occupant">occupant</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small" for="add-from">From</label>
+      <input type="date" id="add-from" name="from" class="form-control form-control-sm" required>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small" for="add-to">Through</label>
+      <input type="text" id="add-to" name="to" class="form-control form-control-sm" value="current" required>
+    </div>
+    <div class="col-auto">
+      <label class="form-label small" for="add-share">Share % (owners)</label>
+      <input type="number" id="add-share" name="share" class="form-control form-control-sm" min="0.01" max="100" step="any" value="100">
+    </div>
+    <div class="col-auto"><button type="submit" class="btn btn-sm btn-primary">Add</button></div>
+  </form>
+  <p class="small text-muted mt-1">Through is a date YYYY-MM-DD, or <code>current</code>. Share is ignored for an occupant.</p>
+</div>
+
+<%- include('footer') %>

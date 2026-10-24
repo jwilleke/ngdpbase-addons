@@ -56,6 +56,8 @@ export interface AccommodationAuditRecord {
   user: string;
   actor?: string;
   ipAddress: string | undefined;
+  /** `failure` only for a change recorded first that then could not be written; absent is success. */
+  result?: 'success' | 'failure';
   action: string;
   severity: 'low' | 'medium' | 'high';
   resource: string;

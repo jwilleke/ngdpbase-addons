@@ -20,14 +20,21 @@ function fakeEngine() {
   const plugins = new Map<string, unknown>();
   const mounts: string[] = [];
   const capabilities: Record<string, boolean> = {};
+  const settings: Record<string, unknown> = { views: '/core/views' };
+  const cards: unknown[] = [];
   managers.set('PluginManager', { registerPlugin: async (name: string, plugin: unknown) => { plugins.set(name, plugin); } });
+  managers.set('AddonsManager', { registerDashboardCard: (card: unknown) => { cards.push(card); } });
   return {
-    managers, plugins, mounts, capabilities,
+    managers, plugins, mounts, capabilities, settings, cards,
     getManager: <T>(name: string) => managers.get(name) as T | undefined,
     registerManager: (name: string, manager: unknown) => { managers.set(name, manager); },
     setCapability: (id: string, enabled: boolean) => { capabilities[id] = enabled; },
-    app: { use: (route: string) => { mounts.push(route); } },
-    createRouter: () => ({ get: () => undefined }) as never
+    app: {
+      use: (route: string) => { mounts.push(route); },
+      get: (name: string) => settings[name],
+      set: (name: string, value: unknown) => { settings[name] = value; }
+    },
+    createRouter: () => ({ get: () => undefined, post: () => undefined }) as never
   };
 }
 
@@ -46,7 +53,10 @@ describe('accommodation register()', () => {
     expect(engine.managers.get('AccommodationManager')).toBeDefined();
     expect(engine.managers.get('ResidencyManager')).toBeDefined();
     expect(engine.plugins.get('Accommodation')).toBe(AccommodationPlugin);
-    expect(engine.mounts).toEqual(['/api/accommodation']);
+    expect(engine.mounts).toEqual(['/api/accommodation', '/addons/accommodation']);
+    // the add-on's views join core's, which stay first
+    expect(engine.settings.views).toEqual(['/core/views', path.join(path.dirname(new URL('../index.js', import.meta.url).pathname), 'views')]);
+    expect(engine.cards).toEqual([{ addonName: 'accommodation', title: 'Owners and occupants', icon: 'fas fa-house-user', adminUrl: '/addons/accommodation/residents' }]);
     expect(engine.capabilities).toEqual({ accommodation: true });
     expect(await AccommodationAddon.status()).toMatchObject({ healthy: true, records: 0 });
     await AccommodationAddon.shutdown();

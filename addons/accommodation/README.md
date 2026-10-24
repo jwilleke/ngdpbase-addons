@@ -63,6 +63,42 @@ returns everyone the accommodation has had, with their dates. `withoutOwner(ctx,
 of `ids` with no owner today (or on `{ on }`); the add-on's status on Admin → Add-ons names them, worked
 out each time it is shown.
 
+### Recording who owns and lives in each accommodation
+
+__Admin → Owners and occupants__ (`/addons/accommodation/residents`, also a card on `/admin`) lists
+every accommodation with its current owners and occupants, and the entries that need fixing
+([#28](https://github.com/jwilleke/ngdpbase-addons/issues/28)). Seeing it needs `accommodation-read`.
+Open an accommodation to change its entries, which needs `accommodation-manage`:
+
+- __Add__ an entry: the person (a username), owner or occupant, from, through (`current` or a date), and
+  an owner's share. For example "Pat Example owns 66-00001.000 from 2015-06-01".
+- __End__ a current entry on its last day: "Lee Renter moved out 2026-09-30".
+- __Correct__ an entry, a malformed one too: that is how one `linkProblems` names is fixed. Fields the
+  page does not show (such as `acquiredFrom`) are kept.
+- __Remove__ an entry entered by mistake. An entry that ended is ended, not removed: it is the history.
+
+There is no sale step: a change of ownership is several edits (end the old owner's entry, add the new
+owner's). Each is saved on its own, so in between the accommodation's owners' shares may not add up to
+100; the page flags it until they do (operator, 2026-10-24).
+
+Each change goes through `ResidencyManager.changeLink(ctx, username, change)`:
+
+- It asks for `accommodation-manage` with the caller's context; a "no" is `AccommodationRefusedError`.
+- It refuses, with the reason and nothing written, a person or accommodation that does not exist, an
+  entry that does not read as one (a bad date, an end before the start, a share outside 0–100), and an
+  entry that changed since the page showed it (reload and try again).
+- It records `accommodation-manage` before it writes (on-failure `refuse`), naming the accommodation,
+  the person, the field and the names of the fields changed, never their values. A write that then
+  fails is recorded as a failure.
+- It writes the one field onto the person's account through `UserManager.updateUser`, as the caller.
+- Then it starts the roles job (below) as the admin who made the change, so the roles follow it now
+  rather than at the next daily run. The job is the one place roles change.
+
+Known gap: two admins changing the same person's entries at the same moment can lose one change. The
+read and the write are not one step, because core has no door for that yet
+([ngdpbase#2025](https://github.com/jwilleke/ngdpbase/issues/2025)). Each change still checks that
+the entry it changes is what the page showed.
+
 ## Owner and occupant roles
 
 The add-on declares two ngdpbase roles, `owner` and `occupant`, and keeps them in step with the dated
@@ -71,8 +107,10 @@ while any of their `ownership` entries is current, and `occupant` while any of t
 entries is; otherwise the role is taken away. The facts are the source: a role given by hand to someone
 with no current entry is removed.
 
-- The daily scheduled job `accommodation.roles` (00:05 in the site's time zone, `ngdpbase.default.timezone`) makes the changes, as the system
-  principal; a day missed while the server was down runs at the next start. Run it now from Admin →
+- A change on the admin page starts the job at once, as the admin who made it.
+- The daily scheduled job `accommodation.roles` (00:05 in the site's time zone, `ngdpbase.default.timezone`) makes the
+  changes the dates bring (an entry that starts or ends today), as the system principal; a day
+  missed while the server was down runs at the next start. Run it now from Admin →
   Scheduled Jobs. `ngdpbase.jobs.accommodation.roles.schedule` changes when it runs.
 - Each change goes through `RoleManager`, which records it in the audit log.
 - A change `RoleManager` refuses does not stop the others. The run then fails, naming each refused

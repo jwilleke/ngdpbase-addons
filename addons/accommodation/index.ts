@@ -5,7 +5,8 @@
  * reference site; nothing here is condo-only, so a landlord can use it too.
  *
  * register() registers AccommodationManager, ResidencyManager and the [{Accommodation}]
- * plugin, mounts the API at /api/accommodation, sets the `accommodation` capability, and
+ * plugin, mounts the API at /api/accommodation and the admin pages at /addons/accommodation
+ * (who owns and lives in each accommodation, #28), sets the `accommodation` capability, and
  * registers the daily job `accommodation.roles`, which keeps the `owner` and `occupant`
  * roles in step with the dated ownership and occupancy entries (#23).
  *
@@ -23,8 +24,10 @@
  */
 import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types';
 import apiRoutes from './routes/api.js';
+import adminRoutes from './routes/admin.js';
 import path from 'node:path';
-import AccommodationManager, { createProvider } from './managers/AccommodationManager.js';
+import { fileURLToPath } from 'node:url';
+import AccommodationManager, { createProvider, type AccommodationAuditRecord, type Decide } from './managers/AccommodationManager.js';
 import ResidencyManager, { type RoleDoor, type UserRecord } from './managers/ResidencyManager.js';
 import { categoriesFrom } from './managers/categories.js';
 import { lateChargesFrom } from './managers/lateCharges.js';
@@ -44,17 +47,23 @@ interface BackgroundJobManagerLike {
     id: string; displayName: string; schedule: string; catchUp: 'latest';
     run(reportProgress: (message: string) => void, ctx: ActorContext): Promise<{ success: boolean; summary?: string; error?: string }>;
   }): void;
+  enqueue(jobId: string, requestedBy: ReturnType<AddonHost['jobContextFromRequest']>): Promise<string>;
 }
 interface UserManagerLike {
   searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<UserRecord[]>;
+  updateUser(username: string, updates: Record<string, unknown>, ctx: ActorContext): Promise<unknown>;
+}
+interface AddonsManagerLike {
+  registerDashboardCard(card: { addonName: string; title: string; icon: string; adminUrl: string }): void;
 }
 
 interface Engine {
   getManager<T = unknown>(name: string): T | null | undefined;
   registerManager(name: string, manager: unknown): void;
   setCapability(id: string, enabled: boolean): void;
-  app?: { use(route: string, handler: unknown): void };
+  app?: { use(route: string, handler: unknown): void; get?(setting: string): unknown; set?(setting: string, value: unknown): void };
   createRouter(): import('express').Router;
+  templateData?: (req: import('express').Request) => Promise<Record<string, unknown>>;
 }
 
 let accommodations: AccommodationManager | null = null;
@@ -77,12 +86,16 @@ const AccommodationAddon = {
     const providerName = typeof config['provider'] === 'string' && config['provider'] !== '' ? config['provider'] : 'json';
     const pdp = engine.getManager<PolicyDecisionPointLike>('PolicyDecisionPoint');
     const auditSink = engine.getManager<Parameters<typeof host.recordAuditEvent>[0]>('AuditManager');
+    // No decision point is a "no" (fail closed).
+    const decide: Decide = async (subject, request) => pdp ? pdp.decide(subject, request) : { permit: false, applicable: false, reason: 'no_decision_point' } as Decision;
+    // accommodation-manage is a refuse event: a record that cannot be written throws here, and the change stops.
+    const recordAudit = async (record: AccommodationAuditRecord): Promise<void> => {
+      await host.recordAuditEvent(auditSink, { result: 'success', ...record } as never);
+    };
     accommodations = new AccommodationManager({
       host,
-      // No decision point is a "no" (fail closed).
-      decide: async (subject, request) => pdp ? pdp.decide(subject, request) : { permit: false, applicable: false, reason: 'no_decision_point' } as Decision,
-      // accommodation-manage is a refuse event: a record that cannot be written throws here, and the change stops.
-      recordAudit: async (record) => { await host.recordAuditEvent(auditSink, { ...record, result: 'success' } as never); },
+      decide,
+      recordAudit,
       provider: await createProvider(providerName, dataPath),
       categories: categoriesFrom(config['categories']),
       lateCharges: lateChargesFrom(config['late-charges']),
@@ -91,19 +104,43 @@ const AccommodationAddon = {
     await accommodations.initialize();
     engine.registerManager('AccommodationManager', accommodations);
 
+    // The owner and occupant roles follow the facts (#23): the job below is the one place they change.
+    const roleManager = engine.getManager<RoleManagerLike>('RoleManager');
+    const jobs = engine.getManager<BackgroundJobManagerLike>('BackgroundJobManager');
+    const rolesJob = roleManager && jobs ? jobs : null;
+
     const accommodationManager = accommodations;
+    const userManager = (): UserManagerLike => {
+      const users = engine.getManager<UserManagerLike>('UserManager');
+      if (!users) throw new Error('UserManager is not available');
+      return users;
+    };
     residency = new ResidencyManager({
       // Every user, inactive ones too: an owner whose account is off still owes.
       users: async (ctx) => (await engine.getManager<UserManagerLike>('UserManager')?.searchUsers('', { limit: 0, activeOnly: false }, ctx)) ?? [],
-      accommodation: (id) => accommodationManager.get(id)
+      accommodation: (id) => accommodationManager.get(id),
+      // The admin page's changes (#28): the entries are written onto the account through UserManager.
+      changes: {
+        decide, recordAudit, host,
+        updateUser: (username, fields, ctx) => userManager().updateUser(username, fields, ctx),
+        // The roles job runs now, as the admin who made the change; the job manager retries,
+        // records and reports it. A job that cannot even start is logged; the daily run follows.
+        ...(rolesJob ? {
+          followRoles: async (ctx: ActorContext) => {
+            try {
+              await rolesJob.enqueue('accommodation.roles', host.jobContextFromRequest(ctx as never));
+            } catch (err) {
+              host.logger.error(`[accommodation] The roles job could not be started after a change by ${ctx.username}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+        } : {})
+      }
     });
     engine.registerManager('ResidencyManager', residency);
     statusContext = () => host.systemContext('accommodation: status, accommodations with no current owner');
 
-    // The owner and occupant roles follow the facts (#23). The add-on writes no ownership or
-    // occupancy yet, so a daily job catches every start and end; a missed day runs at start-up.
-    const roleManager = engine.getManager<RoleManagerLike>('RoleManager');
-    const jobs = engine.getManager<BackgroundJobManagerLike>('BackgroundJobManager');
+    // The roles job: a change on the admin page starts it at once (above); every day it gives
+    // and takes the roles the dates bring, and a missed day runs at start-up.
     if (roleManager && jobs) {
       const roles: RoleDoor = {
         holds: (username, role) => roleManager.hasRole(username, role),
@@ -134,6 +171,13 @@ const AccommodationAddon = {
     await engine.getManager<PluginManagerLike>('PluginManager')?.registerPlugin('Accommodation', AccommodationPlugin);
 
     engine.app?.use('/api/accommodation', apiRoutes(engine, host));
+    // The admin pages (#28): the views folder joins core's, as the forms add-on's does.
+    const views = engine.app?.get?.('views') as string | string[] | undefined;
+    engine.app?.set?.('views', [...[views ?? []].flat(), path.join(path.dirname(fileURLToPath(import.meta.url)), 'views')]);
+    engine.app?.use('/addons/accommodation', adminRoutes(engine, host));
+    engine.getManager<AddonsManagerLike>('AddonsManager')?.registerDashboardCard({
+      addonName: 'accommodation', title: 'Owners and occupants', icon: 'fas fa-house-user', adminUrl: '/addons/accommodation/residents'
+    });
     engine.setCapability('accommodation', true);
   },
 

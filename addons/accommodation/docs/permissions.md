@@ -42,14 +42,16 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 - __Lets a person:__ create, change and remove accommodations, categories, billing parties and owner and
   occupant links, for every unit.
 - __Does not:__ by itself let a person see the units; pair it with `accommodation-read`.
-- __Implies:__ the power to change who is billed and for how much. Every change goes through
-  `AccommodationManager`, which checks this permission against the caller's context and records the
-  change before making it.
-- __Checked:__ by `AccommodationManager` on every change. A refusal is `AccommodationRefusedError`, which a route
-  turns into 401 or 403.
+- __Implies:__ the power to change who is billed and for how much, and who holds the `owner` and
+  `occupant` roles. Every change goes through `AccommodationManager` (accommodations) or
+  `ResidencyManager.changeLink` (owner and occupant entries, on the admin page,
+  [#28](https://github.com/jwilleke/ngdpbase-addons/issues/28)), which checks this permission against
+  the caller's context and records the change before making it.
+- __Checked:__ by `AccommodationManager` and `ResidencyManager` on every change, and first by the admin
+  page's route. A refusal is `AccommodationRefusedError`, which a route turns into 401 or 403.
 - __Recorded:__ audit event `accommodation-manage`, with on-failure `refuse`: if the record cannot be written,
-  the change is not made. The record names the accommodation, the action and the field names changed, never
-  their values.
+  the change is not made. The record names the accommodation, the action (`owner-add`, `occupant-end`, …)
+  and the field names changed, never their values; for an entry, also the person (`metadata.owner`).
 
 ### accommodation-self
 

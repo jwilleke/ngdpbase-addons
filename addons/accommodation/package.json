@@ -37,6 +37,7 @@
     "plugins/*.js",
     "providers/*.js",
     "forms/*.js",
+    "views/",
     "config/",
     "pages/",
     "docs/",
