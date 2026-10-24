@@ -34,6 +34,7 @@ last_updated: "2026-10-24"
 
 ## 🟠 P1
 
+- [#31](https://github.com/jwilleke/ngdpbase-addons/issues/31) — [FEATURE] accommodation: changeLink writes through updateUser's function form (one read-to-write step)
 - [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
 - [#25](https://github.com/jwilleke/ngdpbase-addons/issues/25) — [FEATURE] association: create the add-on (thin: The Fairways' rules as settings, on accommodation)
 - [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) — [FEATURE] accommodation: billing parties, charges and late-charge rules
