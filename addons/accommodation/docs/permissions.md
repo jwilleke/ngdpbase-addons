@@ -21,7 +21,7 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 | --- | --- | --- |
 | [`accommodation-read`](#accommodation-read) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
 | [`accommodation-manage`](#accommodation-manage) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
-| [`accommodation-self`](#accommodation-self) | Planned ([#16](https://github.com/jwilleke/ngdpbase-addons/issues/16)) | residents |
+| [`accommodation-self`](#accommodation-self) | Planned ([#16](https://github.com/jwilleke/ngdpbase-addons/issues/16)) | every user, through `vault-owner` |
 | [`accommodation-review`](#accommodation-review) | Planned ([#17](https://github.com/jwilleke/ngdpbase-addons/issues/17)) | board |
 | [`accommodation-maintenance-read`](#accommodation-maintenance-read) | Proposed | board |
 | [`accommodation-board-read`](#accommodation-board-read) | Proposed | board |
@@ -55,11 +55,16 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 
 ### accommodation-self
 
-- __Lets a person:__ see their own unit (assessment, billing, owners and occupants, balance from the
-  accounting add-on) and change their own details. An owner also edits, adds and removes the unit's
+- __Lets a person:__ see their own unit (assessment, billing, owners and occupants, and a link to the
+  dues card the accounting add-on puts on their profile, which shows their balance) and change their
+  own details. An owner also edits, adds and removes the unit's
   occupants, and fills in the billing address.
 - __Own unit means:__ a unit they hold a current link to, as owner or occupant. The add-on checks that link
   on every request; the permission alone opens nothing.
+- __Granted:__ to every user, through the role `vault-owner`, in the add-on's own policy. Never to site
+  roles or a list of roles, never to an `authenticated` subject, and never by editing a core policy
+  (operator, 2026-10-24, [ngdpbase#1539](https://github.com/jwilleke/ngdpbase/issues/1539)): it is a
+  permission over a person's own records.
 - __Does not:__ change owners. Adding or removing an owner, a sale, or a change of agent waits for a
   holder of `accommodation-review`.
 - __Implies:__ an owner sees their occupants' contact details. An occupant sees the owners' names.
