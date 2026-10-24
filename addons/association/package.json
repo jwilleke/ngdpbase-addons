@@ -14,7 +14,8 @@
     "node": ">=24.15.0"
   },
   "devDependencies": {
-    "@jwilleke/ngdpbase-types": "5.26.0",
+    "@jwilleke/ngdpbase-types": "5.28.0",
+    "@types/express": "^5.0.0",
     "@types/node": "^24.19.1",
     "typescript": "^6.0.3",
     "vitest": "^5.0.3"
@@ -22,7 +23,7 @@
   "ngdpbase": {
     "slug": "association",
     "type": "additive",
-    "minVersion": "5.26.0",
+    "minVersion": "5.28.0",
     "aboutPage": "using-association"
   },
   "scripts": {
@@ -34,6 +35,8 @@
     "index.js",
     "managers/*.js",
     "forms/*.js",
+    "routes/*.js",
+    "views/",
     "config/",
     "pages/",
     "README.md"

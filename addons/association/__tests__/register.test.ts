@@ -17,6 +17,9 @@ function fakeEngine(options: { database?: boolean; forms?: boolean } = {}) {
   const shipped: unknown[][] = [];
   const handlers = new Map<string, (submission: unknown, context: { engine: unknown; req: unknown }) => Promise<unknown>>();
   const opened: unknown[] = [];
+  const mounts: string[] = [];
+  const cards: unknown[] = [];
+  const settings: Record<string, unknown> = { views: '/core/views' };
   managers.set('AccommodationManager', { count: () => 3 });
   managers.set('ResidencyManager', { checkEntry: () => null });
   managers.set('DatabaseManager', {
@@ -27,15 +30,18 @@ function fakeEngine(options: { database?: boolean; forms?: boolean } = {}) {
       return db;
     }
   });
-  managers.set('PolicyDecisionPoint', { usersHolding: async () => [] });
+  managers.set('PolicyDecisionPoint', { usersHolding: async () => [], decide: async () => ({ permit: true }) });
+  managers.set('AddonsManager', { registerDashboardCard: (card: unknown) => { cards.push(card); } });
   if (options.forms !== false) {
     managers.set('FormsDataManager', { registerShippedForm: async (...a: unknown[]) => { shipped.push(a); return 'saved'; } });
     managers.set('FormsAddon', { registerHandler: (id: string, h: never) => { handlers.set(id, h); } });
   }
   return {
-    managers, shipped, handlers, opened,
+    managers, shipped, handlers, opened, mounts, cards, settings,
     getManager: <T>(name: string) => managers.get(name) as T | undefined,
-    registerManager: (name: string, manager: unknown) => { managers.set(name, manager); }
+    registerManager: (name: string, manager: unknown) => { managers.set(name, manager); },
+    app: { use: (route: string) => { mounts.push(route); }, get: (k: string) => settings[k], set: (k: string, v: unknown) => { settings[k] = v; } },
+    createRouter: () => ({ get: () => undefined, post: () => undefined }) as never
   };
 }
 
@@ -54,6 +60,9 @@ describe('association register()', () => {
     const engine = fakeEngine();
     await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
     expect(engine.managers.get('OccupancyManager')).toBeDefined();
+    expect(engine.mounts).toEqual(['/addons/association']);
+    expect((engine.settings.views as string[])[0]).toBe('/core/views');
+    expect(engine.cards).toEqual([{ addonName: 'association', title: 'Occupancy review', icon: 'fas fa-clipboard-check', adminUrl: '/addons/association/review' }]);
     expect(engine.shipped).toHaveLength(1);
     const [addon, definition, ctx] = engine.shipped[0] as [string, { id: string; store: boolean; notify: boolean }, { reason: string }];
     expect([addon, definition.id, definition.store, definition.notify]).toEqual(['association', OCCUPANCY_FORM_ID, false, false]);

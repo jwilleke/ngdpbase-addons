@@ -67,11 +67,35 @@ It replaces The Fairways' Google form "Contact information".
   `association-review` (admins on day one; a site grants it to its board in its own policy) that one
   waits. The notice names the unit and the entry type, not the person. With nobody holding the
   permission, it logs only.
-- Not yet: the review page and applying an approved submission
-  ([#33](https://github.com/jwilleke/ngdpbase-addons/issues/33)), creating an account for someone new
+
+## Review
+
+__Admin → Occupancy review__ (`/addons/association/review`, also a card on `/admin`) lists the submissions
+waiting, with their answers ([#33](https://github.com/jwilleke/ngdpbase-addons/issues/33)). It needs
+`association-review`, which `OccupancyManager` asks again with the reviewer's context.
+
+- __Reject:__ nothing is applied. Recorded as `occupancy-reject` first.
+- __Approve__ applies a submission for the person with its email, in this order:
+  - Check everything first. Exactly one account must have the email, found through
+    `UserManager.searchUsers` with the reviewer's context; none or more than one is never guessed.
+    Accommodation must accept the entry, and an owner's share must be given (default 100 on the page).
+  - Record `occupancy-approve` (on-failure `refuse`).
+  - Add the ownership or occupies entry through accommodation's `changeLink`, which also asks
+    `accommodation-manage`. A reviewer needs both permissions; association does not grant
+    `accommodation-manage`.
+  - Write the details to the person's identity record through `PersonManager.update`
+    (`contact-manage`). The home address goes in `address`. Every other address and phone, the agent
+    and the emergency contact go in `contactPoint`, each typed by `contactType` (`mailing`, `home`,
+    `other`, `business`, `agent`, `emergency`). Kinds the form does not write are kept.
+  - Mark the submission approved.
+- If the details cannot be written, the entry is removed again, the submission stays pending, and the
+  failure is recorded. If that removal fails too, the error says the entry is still in effect.
+- association's review policy grants admins `contact-read`, `contact-manage` and `search-user` with
+  `association-review`.
+- Not yet: creating an account for someone new
   ([#34](https://github.com/jwilleke/ngdpbase-addons/issues/34)), and applying a signed-in owner's or
-  occupant's own-unit submission directly
-  ([#35](https://github.com/jwilleke/ngdpbase-addons/issues/35)).
+  occupant's own-unit submission directly ([#35](https://github.com/jwilleke/ngdpbase-addons/issues/35)).
+  Core is widening its ContactPoint type (`name`, addresses in `contactPoint`) to match the details.
 
 ## Develop
 

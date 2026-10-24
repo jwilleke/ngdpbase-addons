@@ -35,6 +35,7 @@ describe('OccupancyManager.queue (#32)', () => {
   function open(): OccupancyManager {
     return new OccupancyManager({
       db, host,
+      decide: async () => ({ permit: true, applicable: true, reason: 'test' }),
       recordAudit: async (record) => {
         if (auditFails) throw new Error('audit sink down');
         order.push(`audit:${record.result}`);
@@ -90,5 +91,134 @@ describe('OccupancyManager.queue (#32)', () => {
     expect(order).toEqual(['audit:success', 'audit:failure']);
     expect(notices).toEqual([]);
     expect(m.pendingCount()).toBe(1);
+  });
+});
+
+describe('OccupancyManager review (#33)', () => {
+  let db: OccupancyDb & { close(): void; prepare(sql: string): { all(...p: unknown[]): unknown[]; run(...p: unknown[]): unknown; get(...p: unknown[]): unknown } };
+  let audits: OccupancyAuditRecord[];
+  let calls: string[];
+  let fail: Record<string, string>;
+  let accounts: Array<{ username: string; email?: string }>;
+  const reviewer = { username: 'board.member', roles: [], isAuthenticated: true, ipAddress: '192.0.2.5' } as unknown as ActorContext;
+  const stranger = { username: 'nobody', roles: ['admin'], isAuthenticated: true } as unknown as ActorContext;
+
+  beforeEach(() => {
+    db = openAddonTestDatabase('association', { migrations: ASSOCIATION_MIGRATIONS as never, ledgerTable: ASSOCIATION_LEDGER_TABLE }, { slug: 'association', defaults });
+    audits = []; calls = []; fail = {};
+    accounts = [{ username: 'lee.renter', email: 'Lee@Example.org' }];
+  });
+  afterEach(() => { db.close(); });
+
+  function open(): OccupancyManager {
+    return new OccupancyManager({
+      db, host,
+      decide: async (c) => ({ permit: (c as { username?: string }).username === 'board.member', applicable: true, reason: 'test' }),
+      recordAudit: async (record) => { calls.push(`audit:${record.metadata['entryType'] ? record.action : ''}:${record.result}`); audits.push(record); },
+      checkEntry: () => null,
+      notifyReviewers: async () => undefined,
+      approval: {
+        searchUsers: async (c, email) => { calls.push(`search:${email}`); expect(c).toBe(reviewer); return accounts; },
+        addEntry: async (c, username, entry) => {
+          calls.push(`add:${username}:${entry.type}:${entry.share ?? ''}`);
+          if (fail['add']) throw Object.assign(new Error(fail['add']), { name: 'LinkChangeRefusedError' });
+          return { type: entry.type, index: 0, expected: '{}' };
+        },
+        removeEntry: async (_c, username) => { calls.push(`remove:${username}`); if (fail['remove']) throw new Error(fail['remove']); },
+        findPerson: async (_c, username) => (username === 'lee.renter' ? { id: 'urn:uuid:lee', contactPoint: [{ '@type': 'ContactPoint', contactType: 'home', telephone: 'old' }, { '@type': 'ContactPoint', contactType: 'fax', telephone: 'keep' }] } : null),
+        updatePerson: async (_c, id, patch) => { calls.push(`person:${id}:${JSON.stringify(patch)}`); if (fail['person']) throw new Error(fail['person']); }
+      }
+    });
+  }
+  const status = (id: string) => (db.prepare('SELECT status FROM association_occupancy_submissions WHERE id = ?').get(id) as { status: string }).status;
+  async function queued(m: OccupancyManager, id: string, data: Record<string, unknown> = ANSWERS): Promise<void> {
+    await m.queue(visitor, { id, submittedBy: 'anonymous', data });
+    calls = []; audits = [];
+  }
+
+  test('pending lists what waits, oldest first; refused without association-review', async () => {
+    const m = open();
+    await queued(m, 'a');
+    expect((await m.pending(reviewer)).map(s => [s.id, s.unit, s.entryType, s.answers['email']])).toEqual([['a', '66-00001.000', 'occupant', 'lee@example.org']]);
+    // a role named admin does not stand in for the permission
+    await expect(m.pending(stranger)).rejects.toMatchObject({ name: 'OccupancyRefusedError', permission: 'association-review' });
+  });
+
+  test('reject: recorded first, then the submission leaves the list; a second decision is refused', async () => {
+    const m = open();
+    await queued(m, 'a');
+    await m.reject(reviewer, 'a');
+    expect(status('a')).toBe('rejected');
+    expect(audits[0]).toMatchObject({ user: 'board.member', action: 'occupancy-reject', result: 'success', metadata: { submissionId: 'a' } });
+    expect(await m.pending(reviewer)).toEqual([]);
+    await expect(m.reject(reviewer, 'a')).rejects.toThrow('already rejected');
+    await expect(m.reject(stranger, 'a')).rejects.toMatchObject({ name: 'OccupancyRefusedError' });
+  });
+
+  test('approve: finds the one account, records first, adds the entry, writes the details in schema.org shape, marks it approved', async () => {
+    const m = open();
+    await queued(m, 'a', { ...ANSWERS, homeMailingAddress: 'PO Box 1', emergencyName: 'Kim', emergencyPhone: '555-0199', agentName: '' });
+    expect(await m.approve(reviewer, 'a')).toEqual({ username: 'lee.renter' });
+    expect(calls.slice(0, 3)).toEqual(['search:lee@example.org', 'audit:occupancy-approve:success', 'add:lee.renter:occupant:']);
+    const patch = JSON.parse(calls[3].replace('person:urn:uuid:lee:', '')) as { contactPoint: Array<Record<string, string>> };
+    expect(patch.contactPoint).toEqual([
+      { '@type': 'ContactPoint', contactType: 'fax', telephone: 'keep' }, // a kind this form does not write is kept
+      { '@type': 'PostalAddress', contactType: 'mailing', streetAddress: 'PO Box 1' },
+      { '@type': 'ContactPoint', contactType: 'home', telephone: '555-0100' }, // replaces the old home phone
+      { '@type': 'ContactPoint', contactType: 'emergency', name: 'Kim', telephone: '555-0199' }
+    ]);
+    expect(status('a')).toBe('approved');
+    expect(JSON.stringify(audits)).not.toMatch(/555-0100|PO Box/);
+  });
+
+  test('approve an owner needs the share; it goes with the entry', async () => {
+    const m = open();
+    await queued(m, 'o', { ...ANSWERS, entryType: 'Owner' });
+    await expect(m.approve(reviewer, 'o')).rejects.toThrow("an owner's share");
+    expect(calls).toEqual(['search:lee@example.org']);
+    await m.approve(reviewer, 'o', { share: 50 });
+    expect(calls).toContain('add:lee.renter:owner:50');
+  });
+
+  test.each([
+    [[], 'no account has the email lee@example.org'],
+    [[{ username: 'a', email: 'lee@example.org' }, { username: 'b', email: 'LEE@example.org' }], 'more than one account'],
+    [[{ username: 'leeway', email: 'lee@example.org.uk' }], 'no account has the email']
+  ])('approve never guesses the account: %o', async (found, message) => {
+    const m = open();
+    await queued(m, 'a');
+    accounts = found;
+    await expect(m.approve(reviewer, 'a')).rejects.toThrow(message);
+    expect(calls.filter(c => !c.startsWith('search'))).toEqual([]);
+    expect(status('a')).toBe('pending');
+  });
+
+  test('details that cannot be written: the entry is removed again, the submission stays pending, the failure is recorded', async () => {
+    const m = open();
+    await queued(m, 'a');
+    fail['person'] = 'contact store down';
+    await expect(m.approve(reviewer, 'a')).rejects.toThrow('contact store down');
+    expect(calls.filter(c => !c.startsWith('person'))).toEqual(['search:lee@example.org', 'audit:occupancy-approve:success', 'add:lee.renter:occupant:', 'remove:lee.renter', 'audit:occupancy-approve:failure']);
+    expect(audits[1].metadata['reason']).toContain('the entry was removed again');
+    expect(status('a')).toBe('pending');
+  });
+
+  test('if the undo fails too, the error says the entry is still in effect', async () => {
+    const m = open();
+    await queued(m, 'a');
+    fail['person'] = 'contact store down';
+    fail['remove'] = 'disk full';
+    await expect(m.approve(reviewer, 'a')).rejects.toThrow('could not be removed again (disk full): it is still in effect');
+    expect(status('a')).toBe('pending');
+  });
+
+  test('an entry accommodation refuses is recorded as a failure and nothing else is written', async () => {
+    const m = open();
+    await queued(m, 'a');
+    fail['add'] = 'no accommodation 66-00001.000';
+    await expect(m.approve(reviewer, 'a')).rejects.toMatchObject({ name: 'LinkChangeRefusedError' });
+    expect(calls.some(c => c.startsWith('person'))).toBe(false);
+    expect(audits.map(a => a.result)).toEqual(['success', 'failure']);
+    expect(status('a')).toBe('pending');
   });
 });
