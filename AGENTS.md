@@ -89,9 +89,11 @@ linted instead.
 General-purpose [ngdpbase](https://github.com/jwilleke/ngdpbase) add-ons, each independent of
 the others and of any one site. Add-ons and plans are listed in [README.md](README.md).
 
-- `accommodation`, `governance`, `association` — the condo work, being split into add-ons a site
-  enables as it needs; epic [#19](https://github.com/jwilleke/ngdpbase-addons/issues/19), design in
-  `docs/plans/condo-brainstorm.md`. `condo` is retired once they carry everything. Replaces
+- `accommodation`, `governance`, `association` — the condo work, split into add-ons a site enables
+  as it needs; epic [#19](https://github.com/jwilleke/ngdpbase-addons/issues/19), design in
+  `docs/plans/condo-brainstorm.md`. `accommodation` and `association` are built; `governance` is
+  deferred. The old `condo` add-on is retired: its code moved into `accommodation`
+  ([#26](https://github.com/jwilleke/ngdpbase-addons/issues/26)). Replaces
   `fairways-gen2-website/addons/fairways`; The Fairways is the reference site.
 - Repo tooling follows [mjs-project-template](https://github.com/jwilleke/mjs-project-template).
 
