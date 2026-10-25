@@ -56,8 +56,7 @@ last_updated: "2026-10-24"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-- [#38](https://github.com/jwilleke/ngdpbase-addons/issues/38) — [FEATURE] accommodation: an owner sets the unit's billing address (#16c)
-- [#36](https://github.com/jwilleke/ngdpbase-addons/issues/36) — [FEATURE] accommodation: a resident's own page, their unit, its owners and occupants (#16a)
+*None.*
 
 ## ⏸ Deferred
 
