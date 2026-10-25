@@ -19,7 +19,7 @@
  * The entry's dates and unit are checked by accommodation's own rule
  * (ResidencyManager.checkEntry), the one that applies them later, never a copy of it.
  */
-import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types';
+import type { ActorContext, AddonHost, ContactPointEntry, Decision, PostalAddress } from '@jwilleke/ngdpbase-types';
 
 /** A "no" from the decision point, carrying the permission and decision for ApiContext.enforceDeny. */
 export class OccupancyRefusedError extends Error {
@@ -50,19 +50,18 @@ export interface ApprovalDoors {
   updatePerson: (ctx: ActorContext, id: string, patch: Record<string, unknown>) => Promise<unknown>;
 }
 
-/** One schema.org contact entry, typed by contactType. */
-type ContactEntry = Record<string, string>;
-
 /**
  * The answers as identity-record fields (settled with ngdpbase core, 2026-10-24): the home
  * address as `address`; everything else as `contactPoint` entries, a PostalAddress for an
- * address and a ContactPoint for a phone. Answers left blank are left out.
+ * address and a ContactPoint for a phone (core's `ContactPointEntry`, ngdpbase 5.29.1). Answers
+ * left blank are left out.
  */
-export function detailsFrom(data: Record<string, unknown>): { address?: ContactEntry; contactPoint: ContactEntry[] } {
+export function detailsFrom(data: Record<string, unknown>): { address?: PostalAddress; contactPoint: ContactPointEntry[] } {
   const a = (name: string): string => answer(data, name);
-  const entry = (type: 'PostalAddress' | 'ContactPoint', contactType: string, fields: Record<string, string>): ContactEntry[] => {
+  const entry = (type: 'PostalAddress' | 'ContactPoint', contactType: string,
+    fields: { name?: string; streetAddress?: string; telephone?: string; email?: string }): ContactPointEntry[] => {
     const given = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== ''));
-    return Object.keys(given).length === 0 ? [] : [{ '@type': type, contactType, ...given }];
+    return Object.keys(given).length === 0 ? [] : [{ '@type': type, contactType, ...given } as ContactPointEntry];
   };
   const contactPoint = [
     ...entry('PostalAddress', 'mailing', { streetAddress: a('homeMailingAddress') }),
@@ -74,7 +73,8 @@ export function detailsFrom(data: Record<string, unknown>): { address?: ContactE
     ...entry('ContactPoint', 'emergency', { name: a('emergencyName'), telephone: a('emergencyPhone'), email: a('emergencyEmail') })
   ];
   const home = a('homeAddress');
-  return { ...(home ? { address: { '@type': 'PostalAddress', streetAddress: home } } : {}), contactPoint };
+  const address: PostalAddress = { '@type': 'PostalAddress', streetAddress: home };
+  return { ...(home ? { address } : {}), contactPoint };
 }
 
 /** A submission as the review page shows it. */
@@ -289,7 +289,7 @@ export default class OccupancyManager {
     }
 
     const details = detailsFrom(data);
-    const written = new Set(details.contactPoint.map(c => c.contactType));
+    const written = new Set(details.contactPoint.map(c => c.contactType ?? ''));
     const kept = (person.contactPoint ?? []).filter(c => !written.has(String((c as Record<string, unknown>)['contactType'])));
     try {
       await doors.updatePerson(ctx, person.id, { ...(details.address ? { address: details.address } : {}), contactPoint: [...kept, ...details.contactPoint] });

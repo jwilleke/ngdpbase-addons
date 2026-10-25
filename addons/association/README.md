@@ -95,7 +95,8 @@ waiting, with their answers ([#33](https://github.com/jwilleke/ngdpbase-addons/i
 - Not yet: creating an account for someone new
   ([#34](https://github.com/jwilleke/ngdpbase-addons/issues/34)), and applying a signed-in owner's or
   occupant's own-unit submission directly ([#35](https://github.com/jwilleke/ngdpbase-addons/issues/35)).
-  Core is widening its ContactPoint type (`name`, addresses in `contactPoint`) to match the details.
+- The details use core's own schema.org types (`ContactPointEntry`: a `ContactPoint` or a
+  `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.29.1 or later.
 
 ## Develop
 
