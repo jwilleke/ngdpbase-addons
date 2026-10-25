@@ -23,7 +23,7 @@ import type ResidencyManager from '../managers/ResidencyManager.js';
 import type { LinkChange, LinkChangeResult } from '../managers/ResidencyManager.js';
 import type { LinkType, UnitLink } from '../managers/unitLinks.js';
 import { billingForForm, unitAddress } from '../managers/billing.js';
-import { countyRecordOf } from '../managers/countyRecord.js';
+import { countyRecordOf, suggestedBilling } from '../managers/countyRecord.js';
 import { OCCUPANT_EDITABLE_FIELDS } from '../managers/contactDetails.js';
 
 interface Engine {
@@ -144,7 +144,7 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           parcel,
           label: unitLabel(accommodations, parcel),
           county: countyRecordOf(accommodations.get(parcel)),
-          billing: billingForForm(accommodations.get(parcel)),
+          billing: billingForForm(accommodations.get(parcel), suggestedBilling(accommodations.get(parcel))),
           entries,
           shareProblems,
           people: await residency.people(actor),

@@ -1,6 +1,10 @@
-<%# Where a unit's invoices go (ngdpbase#2042): the treasurer's and the owners' form. Locals: action, entries [{address, share}], usesUnitAddress, problem, csrfToken. %>
-<% if (problem) { %>
-  <div class="alert alert-warning small" data-testid="billing-problem">This billing cannot be used until it is fixed: <%= problem %></div>
+<%# Where a unit's invoices go (ngdpbase#2042): the treasurer's and the owners' form. Locals: action, billing (BillingForm: entries, suggested, problem), csrfToken. %>
+<% var entries = billing.entries; %>
+<% if (billing.problem) { %>
+  <div class="alert alert-warning small" data-testid="billing-problem">Invoices cannot go out until this is fixed: <%= billing.problem %>.</div>
+<% } %>
+<% if (billing.suggested && entries.length > 0) { %>
+  <p class="small mb-1" data-testid="billing-suggested">Suggested from the county's record or the unit's address. Check it, change it if needed, and save.</p>
 <% } %>
 <form method="POST" action="<%= action %>" data-testid="billing-form">
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -21,7 +25,6 @@
 <p class="small text-muted mt-1 mb-0">
   Type each address the way it goes on the envelope, names first. With one address, the share can be left empty: it is 100%.
   With more than one, give each its share; they must add up to 100%. To take an address off, empty its box.
-  Empty every box to send invoices to the unit's own address again.
-  <% if (usesUnitAddress) { %>Right now the invoices go to the unit's own address.<% } %>
+  Every unit must keep at least one address.
   Who owes is always the unit's owners on the invoice date, by their shares; these addresses only say where the invoices are sent.
 </p>

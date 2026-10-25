@@ -201,10 +201,11 @@ on the envelope, names first, and that entry's share of the invoice:
 
 - The address is free text, several lines. It names no account.
 - The shares add up to exactly 100. A single entry may leave its share out: it is 100.
-- A unit with no `billing` has one entry: its own address (its `address` field, else its county
-  street fields), 100%.
+- Every unit must have at least one entry (operator, 2026-10-25): there is no default address, and
+  saving an empty list is refused.
 - The treasurer sets them on the unit's owners and occupants page; an owner on their own page, with
-  the same rights.
+  the same rights. For a unit with none yet, the form offers the county's owner and mailing address
+  (else the unit's own address) as a suggestion, saved only when someone checks it and saves.
 
 `ResidencyManager.billing(ctx, id, { on })` is a door: it needs `accommodation-billing-read` (admins;
 a site, or the accounting add-on's policy, grants its invoice job), decided with the caller's context.
@@ -217,7 +218,7 @@ returns:
 
 Owners come by identity `@id`, ordered by it, never by username; accounting reads names through
 IdentityManager. No names are copied in. It refuses, naming the accommodation, rather than bill
-wrongly: no current owner, owner or billing shares that do not add up to 100, nowhere to send it, an
+wrongly: no current owner, owner or billing shares that do not add up to 100, no billing entries, an
 owner with no identity record, or billing still in the earlier shape.
 
 __The earlier shape__ (entries naming owners in `to`, with a structured address) is converted once at

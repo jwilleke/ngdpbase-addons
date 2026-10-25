@@ -43,7 +43,8 @@ describe('ResidencyManager.ownUnits (#36)', () => {
       occupants: [{ name: 'Lee Renter', email: 'lee@example.org' }] // moving.in starts next month
     });
     expect(unit.owners[0]).not.toHaveProperty('email'); // co-owners by name only
-    expect(unit.billing?.map(b => [b.address.split('\n')[0], b.share])).toEqual([['PAT EXAMPLE', 60], ['SAM EXAMPLE', 40]]);
+    expect(unit.billing?.entries.map(b => [b.address.split('\n')[0], b.share])).toEqual([['PAT EXAMPLE', '60'], ['SAM EXAMPLE', '40']]);
+    expect(unit.billing?.suggested).toBe(false);
     // the people were read as the system, with a reason naming the resident — not as the resident
     expect(readAs.every(c => (c as { reason?: string }).reason === 'accommodation: own units and their residents, for pat.example')).toBe(true);
   });
@@ -119,14 +120,14 @@ describe('ResidencyManager.setBilling (ngdpbase#2042)', () => {
     expect(t.notices).toEqual(['An owner of unit 66-00001.000 changed where its invoices go.']);
   });
 
-  test('the treasurer sets them for any unit; one entry with no share is 100%; none goes back to the unit address', async () => {
+  test('the treasurer sets them for any unit; one entry with no share is 100%; a unit must keep one', async () => {
     const t = withBilling();
     await t.m.setBilling(as('treasurer'), '66-00002.000', [{ address: 'KIM BOTH & SAM EXAMPLE\n103 Sample Dr' }]);
     expect(t.written[0][2]).toEqual([{ address: 'KIM BOTH & SAM EXAMPLE\n103 Sample Dr', share: 100 }]);
     expect(t.audits[0]).toMatchObject({ metadata: { by: 'treasurer', entries: 1 } });
     expect(t.notices).toEqual(['The treasurer changed where the invoices of unit 66-00002.000 go.']);
-    await t.m.setBilling(as('treasurer'), '66-00002.000', []);
-    expect(t.written[1][2]).toBeUndefined();
+    await expect(t.m.setBilling(as('treasurer'), '66-00002.000', [])).rejects.toThrow('a unit must have at least one billing address');
+    expect(t.written).toHaveLength(1);
   });
 
   test.each([

@@ -27,7 +27,8 @@ import type { Accommodation } from '../providers/AccommodationProvider.js';
 import { AccommodationRefusedError, type AccommodationAuditRecord, type Decide } from './AccommodationManager.js';
 import { fieldOf, holdsOn, isIsoDate, localToday, readEntries, readLinks, shareProblems, storedEntry, type LinkType, type UnitLink } from './unitLinks.js';
 import { contactDetailsFrom, occupantAnswersFrom, OCCUPANT_EDITABLE_FIELDS, OCCUPANT_EDITABLE_TYPES } from './contactDetails.js';
-import { addressText, convertLegacyBilling, isLegacyBilling, readBilling, unitAddress, type BillingEntry } from './billing.js';
+import { billingForForm, convertLegacyBilling, isLegacyBilling, readBilling, type BillingEntry, type BillingForm } from './billing.js';
+import { suggestedBilling } from './countyRecord.js';
 
 /** A person on a unit: `username` is the ngdpbase account. */
 export interface UnitMember { username: string; name: string; email: string | null }
@@ -118,10 +119,10 @@ export interface ResidencyChanges {
   inviteUser?: (systemCtx: ActorContext, username: string) => Promise<{ outcome: string; reason?: string }>;
   /**
    * AccommodationManager's write of the unit's billing entries, under the system context with a
-   * reason naming the caller; undefined removes them. The caller's own decision and record come
+   * reason naming the caller. The caller's own decision and record come
    * first, in this manager.
    */
-  writeBilling?: (systemCtx: ActorContext, id: string, billing: BillingEntry[] | undefined) => Promise<void>;
+  writeBilling?: (systemCtx: ActorContext, id: string, billing: BillingEntry[]) => Promise<void>;
   /** Tell the holders of `accommodation-notices` (#38). Must not throw. */
   notify?: (title: string, message: string) => Promise<void>;
   /**
@@ -143,8 +144,8 @@ export interface OwnUnit {
   owners: Array<{ name: string }>;
   /** To an owner, each occupant's entry too, so the owner can end it (#37). */
   occupants: Array<{ name: string; email?: string; entry?: { username: string; at: EntryRef }; details?: Record<string, string> }>;
-  /** To an owner, where the unit's invoices go, to change it (ngdpbase#2042); absent when it needs the treasurer first. */
-  billing?: BillingEntry[];
+  /** To an owner, where the unit's invoices go, as the form shows it, to change it (ngdpbase#2042). */
+  billing?: BillingForm;
 }
 
 /** core's IdentityManager, under the system context once a door has decided (#37). */
@@ -242,10 +243,10 @@ export default class ResidencyManager {
 
   /**
    * The unit's invoices on a date (today unless `on` is given), ngdpbase#2042: `billing`, where they
-   * go (the entries kept on the unit, else its own address at 100%), and `owners`, who owes them:
+   * go (the entries kept on the unit; every unit must have them), and `owners`, who owes them:
    * each current owner by identity @id with their share, ordered by @id. Accounting reads names through
    * IdentityManager; none are copied here. Throws, naming the unit, rather than bill wrongly: no
-   * owner, owner shares or billing shares that do not add up to 100, nowhere to send it, or an owner
+   * owner, owner shares or billing shares that do not add up to 100, no billing entries, or an owner
    * with no identity record.
    *
    * The door for anyone outside this manager, accounting's invoice job included: it decides
@@ -278,14 +279,11 @@ export default class ResidencyManager {
     return { billing, owners: [...owners].sort(([a], [b]) => a.localeCompare(b)).map(([at, share]) => ({ '@id': at, share })) };
   }
 
-  /** Where the unit's invoices go: its billing entries, else its own address at 100%. Throws when neither reads. */
+  /** Where the unit's invoices go: its billing entries. Throws when it has none, or they do not read. */
   private billingEntries(id: string): BillingEntry[] {
-    const accommodation = this.accommodation(id);
-    const stored = readBilling(id, accommodation?.billing);
-    if (stored) return stored;
-    const address = unitAddress(accommodation);
-    if (!address) throw new Error(`unit ${id}: no billing entries and no unit address to bill`);
-    return [{ address: addressText(address), share: 100 }];
+    const stored = readBilling(id, this.accommodation(id)?.billing);
+    if (!stored) throw new Error(`unit ${id}: no billing address; an owner or the treasurer sets one`);
+    return stored;
   }
 
   /** The people living in the unit on a date (today unless `on` is given); never billed. */
@@ -399,8 +397,9 @@ export default class ResidencyManager {
         }
       }
       if (isOwner) {
-        // Billing the unit cannot read (shares off, the earlier shape) is left out, not guessed.
-        try { unit.billing = this.billingEntries(id); } catch { /* the treasurer fixes it first */ }
+        // As the form shows it: what is stored, with what is wrong; a suggestion when there is none.
+        const accommodation = this.accommodation(id);
+        unit.billing = billingForForm(accommodation, suggestedBilling(accommodation));
       }
       result.push(unit);
     }
@@ -409,8 +408,7 @@ export default class ResidencyManager {
 
   /**
    * Sets where the unit's invoices go (ngdpbase#2042; operator, 2026-10-25): the whole list of
-   * billing entries, each a free-form address and a share; an empty list goes back to the unit's own
-   * address. The treasurer (`accommodation-manage`) may, and so may any current owner of the unit
+   * billing entries, each a free-form address and a share; a unit must keep at least one. The treasurer (`accommodation-manage`) may, and so may any current owner of the unit
    * (`accommodation-self`), with the same rights. Checked before anything is written. Recorded as
    * `accommodation-billing-update` under the caller first (on-failure refuse; counts, never the
    * addresses), then written by AccommodationManager under the system context with a reason naming
@@ -431,9 +429,10 @@ export default class ResidencyManager {
     if (by === 'owner' && !(await this.owners(system, id)).some(o => o.username === me)) {
       throw new LinkChangeRefusedError(`you are not a current owner of unit ${id}`);
     }
-    let next: BillingEntry[] | undefined;
+    let next: BillingEntry[];
     try {
-      next = entries.length === 0 ? undefined : readBilling(id, entries);
+      if (entries.length === 0) throw new Error('a unit must have at least one billing address');
+      next = readBilling(id, entries) ?? [];
     } catch (err) {
       throw new LinkChangeRefusedError(err instanceof Error ? err.message : String(err));
     }
@@ -444,7 +443,7 @@ export default class ResidencyManager {
       ...who, result,
       action: 'billing-set', severity: 'medium', resource: id, resourceType: 'accommodation',
       // counts, never the addresses
-      metadata: { ...whoMetadata, by, entries: next?.length ?? 0, fields: ['billing'], ...(reason ? { reason } : {}) }
+      metadata: { ...whoMetadata, by, entries: next.length, fields: ['billing'], ...(reason ? { reason } : {}) }
     });
     await changes.recordAudit(record('success'));
     try {

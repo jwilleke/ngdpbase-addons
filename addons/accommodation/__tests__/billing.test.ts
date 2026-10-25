@@ -28,9 +28,11 @@ describe('billing helpers', () => {
     expect(convertLegacyBilling(legacy, u => (u === 'molly' ? 'Molly' : undefined))).toEqual({ missing: ['gone.user'] });
   });
 
-  test('a form shows the entries as stored, else the unit address at 100%, with what is wrong', () => {
-    expect(billingForForm({ id: 'p', address: { streetAddress: '1 Main St' } })).toEqual({ entries: [{ address: '1 Main St', share: '100' }], usesUnitAddress: true });
+  test('a form shows the entries as stored, with what is wrong; a unit with none gets the suggestion, unsaved', () => {
     expect(billingForForm({ id: 'p', billing: [{ address: 'A', share: 60 }] }))
-      .toEqual({ entries: [{ address: 'A', share: '60' }], usesUnitAddress: false, problem: 'unit p: billing shares add up to 60%, not 100%' });
+      .toEqual({ entries: [{ address: 'A', share: '60' }], suggested: false, problem: 'unit p: billing shares add up to 60%, not 100%' });
+    expect(billingForForm({ id: 'p' }, 'PAT\n1 Main St')).toEqual({ entries: [{ address: 'PAT\n1 Main St', share: '100' }], suggested: true,
+      problem: 'this unit has no billing address yet, so no invoice can be sent; save one' });
+    expect(billingForForm({ id: 'p' }).entries).toEqual([]);
   });
 });

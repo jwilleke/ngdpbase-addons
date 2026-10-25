@@ -111,12 +111,9 @@ describe('ResidencyManager', () => {
     expect(asked).toEqual([]); // nobody is read before the door says yes
   });
 
-  test('billing with no entries kept: one invoice to the owners at the unit address, 100%, as text', async () => {
+  test('every unit must have billing entries: none is refused, never sent to a guessed address', async () => {
     const m = open();
-    expect(await m.billing(ctx, '66-00002.000')).toEqual({
-      billing: [{ address: '103 Sample Dr', share: 100 }],
-      owners: [{ '@id': 'urn:uuid:kim.both', share: 50 }, { '@id': 'urn:uuid:sam.example', share: 50 }]
-    });
+    await expect(m.billing(ctx, '66-00002.000')).rejects.toThrow('unit 66-00002.000: no billing address; an owner or the treasurer sets one');
   });
 
   test('a single billing entry may leave out its share: it is 100%', async () => {
@@ -139,7 +136,7 @@ describe('ResidencyManager', () => {
   test("billing refuses when the owners' shares do not add up to 100, or an owner has no identity record", async () => {
     const one = (share: number, username = 'a') => ({ username, ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: 'current', share }] });
     const make = (users: unknown[]) => new ResidencyManager({
-      users: async () => users as never, accommodation: () => ({ id: 'p1', address: { streetAddress: '1 Main St' } }), today: () => TEST_TODAY,
+      users: async () => users as never, accommodation: () => ({ id: 'p1', billing: [{ address: '1 Main St' }] }), today: () => TEST_TODAY,
       decide: async () => ({ permit: true, applicable: true, reason: 'test' }),
       systemContext: (reason) => ({ username: 'system', reason }) as unknown as ActorContext,
       identities: { find: async (_c, username) => (username === 'no.identity' ? null : { id: `urn:uuid:${username}` }), update: async () => undefined }
@@ -150,14 +147,13 @@ describe('ResidencyManager', () => {
   });
 
   test('billing on a past date: who owned it then', async () => {
-    const m = open([{ id: '66-00001.000', address: { streetAddress: '101 Sample Dr' } }]);
+    const m = open([{ id: '66-00001.000', billing: [{ address: '101 Sample Dr' }] }]);
     expect((await m.billing(ctx, '66-00001.000', { on: '2012-01-01' })).owners).toEqual([{ '@id': 'urn:uuid:old.owner', share: 100 }]);
   });
 
-  test('billing refuses a unit with no owner, or nowhere to send it', async () => {
-    const m = open([{ id: '66-00003.000' }, { id: '66-00001.000' }]);
+  test('billing refuses a unit with no owner', async () => {
+    const m = open([{ id: '66-00003.000', billing: [{ address: 'A' }] }]);
     await expect(m.billing(ctx, '66-00003.000')).rejects.toThrow('no current owner to bill');
-    await expect(m.billing(ctx, '66-00001.000')).rejects.toThrow('no billing entries and no unit address to bill');
   });
 
   test('no user source is no owners', async () => {

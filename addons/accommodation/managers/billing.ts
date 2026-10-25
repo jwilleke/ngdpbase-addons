@@ -8,8 +8,8 @@
  *   ]
  *
  * Who owes is never here: it is the unit's owners on the invoice date (ResidencyManager.billing).
- * Shares add up to exactly 100; a single entry's share may be left out and is then 100. A unit
- * without `billing` has one entry: its own address, 100%.
+ * Shares add up to exactly 100; a single entry's share may be left out and is then 100. Every unit
+ * must have at least one entry (operator, 2026-10-25): there is no default address.
  */
 import type { Accommodation } from '../providers/AccommodationProvider.js';
 
@@ -70,7 +70,7 @@ export function isLegacyBilling(value: unknown): boolean {
  * The billing entries stored on the unit, checked. Throws, naming the unit, for anything that would
  * send an invoice nowhere or bill the wrong amount: an entry with no address, a share that is not a
  * percent above 0, shares that do not add up to 100, or the earlier shape not yet converted.
- * Undefined means the unit keeps no entries (its own address applies).
+ * Undefined means the unit has none yet, which billing() refuses.
  */
 export function readBilling(unitId: string, value: unknown): BillingEntry[] | undefined {
   if (value === undefined) return undefined;
@@ -110,15 +110,23 @@ export function convertLegacyBilling(value: unknown[], nameOf: (username: string
   return missing.length > 0 ? { missing: [...new Set(missing)].sort() } : { billing };
 }
 
+/** The billing entries as a form shows them, with what is wrong with them, if anything. */
+export interface BillingForm {
+  entries: Array<{ address: string; share: string }>;
+  /** True when the unit has none yet and `entries` is only a suggestion, not saved. */
+  suggested: boolean;
+  problem?: string;
+}
+
 /**
- * The billing entries as a form shows them: as stored, else the unit's own address at 100%
- * (`usesUnitAddress`), with what is wrong with them, if anything, so the treasurer can fix it there.
+ * The billing entries as a form shows them: as stored, else `suggestion` at 100%, marked suggested
+ * and unsaved, with what is wrong with them, if anything, so it can be fixed there.
  */
-export function billingForForm(unit: Accommodation | undefined): { entries: Array<{ address: string; share: string }>; usesUnitAddress: boolean; problem?: string } {
+export function billingForForm(unit: Accommodation | undefined, suggestion?: string): BillingForm {
   const stored = unit?.billing;
   if (stored === undefined) {
-    const address = unitAddress(unit);
-    return { entries: address ? [{ address: addressText(address), share: '100' }] : [], usesUnitAddress: true };
+    return { entries: suggestion ? [{ address: suggestion, share: '100' }] : [], suggested: true,
+      problem: 'this unit has no billing address yet, so no invoice can be sent; save one' };
   }
   let problem: string | undefined;
   try { readBilling(unit?.id ?? '', stored); } catch (err) { problem = err instanceof Error ? err.message : String(err); }
@@ -126,5 +134,5 @@ export function billingForForm(unit: Accommodation | undefined): { entries: Arra
     const e = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
     return { address: typeof e.address === 'string' ? e.address : '', share: typeof e.share === 'number' ? String(e.share) : '' };
   });
-  return { entries, usesUnitAddress: false, ...(problem ? { problem } : {}) };
+  return { entries, suggested: false, ...(problem ? { problem } : {}) };
 }

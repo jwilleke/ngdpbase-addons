@@ -37,7 +37,7 @@
 
   <h4>Billing</h4>
   <div class="mb-4">
-    <%- include('accommodation-billing-form', { action: '/addons/accommodation/residents/' + encodeURIComponent(parcel) + '/billing', entries: billing.entries, usesUnitAddress: billing.usesUnitAddress, problem: billing.problem || '', csrfToken: csrfToken }) %>
+    <%- include('accommodation-billing-form', { action: '/addons/accommodation/residents/' + encodeURIComponent(parcel) + '/billing', billing: billing, csrfToken: csrfToken }) %>
   </div>
 
   <h4>Entries</h4>

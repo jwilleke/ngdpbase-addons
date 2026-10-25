@@ -10,7 +10,7 @@
  *   }
  */
 import type { Accommodation } from '../providers/AccommodationProvider.js';
-import { readAddress, type PostalAddress } from './billing.js';
+import { addressText, readAddress, unitAddress, type PostalAddress } from './billing.js';
 
 export interface CountyRecord {
   ownerName: string;
@@ -43,4 +43,15 @@ export function countyRecordOf(unit: Accommodation | undefined): CountyRecord | 
     source: text(r.source),
     readOn: text(r.readOn)
   };
+}
+
+/**
+ * A first billing address to offer for a unit that has none, never saved without a person: the
+ * county's owner and mailing address, else the unit's own address. Undefined when it has neither.
+ */
+export function suggestedBilling(unit: Accommodation | undefined): string | undefined {
+  const county = countyRecordOf(unit);
+  if (county) return [county.ownerName, county.attention ?? '', addressText(county.mailingAddress)].filter(Boolean).join('\n');
+  const own = unitAddress(unit);
+  return own ? addressText(own) : undefined;
 }
