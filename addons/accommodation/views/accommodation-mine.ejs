@@ -9,6 +9,8 @@
     <div class="alert alert-success" data-testid="flash-billing-saved">Billing address saved. The board has been told.</div>
   <% } else if (flash === 'occupant-ended') { %>
     <div class="alert alert-success" data-testid="flash-occupant-ended">Saved: the occupant's last date is set. The board has been told.</div>
+  <% } else if (flash === 'occupant-details') { %>
+    <div class="alert alert-success" data-testid="flash-occupant-details">Saved: the occupant's details are changed. The board has been told.</div>
   <% } else if (flash === 'refused') { %>
     <div class="alert alert-danger" data-testid="flash-refused">Not saved: <%= reason %></div>
   <% } %>
@@ -47,6 +49,24 @@
                     <input type="date" id="end-<%= o.entry.username %>" name="on" class="form-control form-control-sm" style="width: 10rem" required>
                     <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
                   </form>
+                  <% if (o.details) { var d = o.details; %>
+                    <details class="mt-1">
+                      <summary class="small">Change their phones, work and emergency contact</summary>
+                      <form method="POST" action="/addons/accommodation/mine/<%= encodeURIComponent(u.id) %>/occupant-details" class="row g-1 mt-1">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="hidden" name="username" value="<%= o.entry.username %>">
+                        <div class="col-md-3"><input type="tel" name="homePhone" class="form-control form-control-sm" value="<%= d.homePhone %>" placeholder="Home phone" aria-label="Home phone"></div>
+                        <div class="col-md-3"><input type="tel" name="otherPhone" class="form-control form-control-sm" value="<%= d.otherPhone %>" placeholder="Other phone" aria-label="Other phone"></div>
+                        <div class="col-md-3"><input type="text" name="businessMailingAddress" class="form-control form-control-sm" value="<%= d.businessMailingAddress %>" placeholder="Business mailing address" aria-label="Business mailing address"></div>
+                        <div class="col-md-3"><input type="tel" name="businessPhone" class="form-control form-control-sm" value="<%= d.businessPhone %>" placeholder="Business phone" aria-label="Business phone"></div>
+                        <div class="col-md-3"><input type="text" name="emergencyName" class="form-control form-control-sm" value="<%= d.emergencyName %>" placeholder="Emergency contact name" aria-label="Emergency contact name"></div>
+                        <div class="col-md-3"><input type="tel" name="emergencyPhone" class="form-control form-control-sm" value="<%= d.emergencyPhone %>" placeholder="Emergency phone" aria-label="Emergency phone"></div>
+                        <div class="col-md-3"><input type="email" name="emergencyEmail" class="form-control form-control-sm" value="<%= d.emergencyEmail %>" placeholder="Emergency email" aria-label="Emergency email"></div>
+                        <div class="col-md-3"><button type="submit" class="btn btn-sm btn-primary">Save</button></div>
+                      </form>
+                      <p class="small text-muted mb-0">A blank box clears it. It applies at once, and the board is told.</p>
+                    </details>
+                  <% } %>
                 <% } %>
               </li>
             <% }) %>

@@ -26,6 +26,7 @@ import type { ActorContext, AddonHost } from '@jwilleke/ngdpbase-types';
 import type { Accommodation } from '../providers/AccommodationProvider.js';
 import { AccommodationRefusedError, type AccommodationAuditRecord, type Decide } from './AccommodationManager.js';
 import { fieldOf, holdsOn, isIsoDate, localToday, readEntries, readLinks, shareProblems, storedEntry, type LinkType, type UnitLink } from './unitLinks.js';
+import { contactDetailsFrom, occupantAnswersFrom, OCCUPANT_EDITABLE_FIELDS, OCCUPANT_EDITABLE_TYPES } from './contactDetails.js';
 import { joinNames, readAddress, readBillingParties, unitAddress, type PostalAddress, type StoredBillingParty } from './billing.js';
 
 /** A person on a unit: `username` is the ngdpbase account. */
@@ -133,12 +134,21 @@ export interface OwnUnit {
   as: LinkType[];
   owners: Array<{ name: string }>;
   /** To an owner, each occupant's entry too, so the owner can end it (#37). */
-  occupants: Array<{ name: string; email?: string; entry?: { username: string; at: EntryRef } }>;
+  occupants: Array<{ name: string; email?: string; entry?: { username: string; at: EntryRef }; details?: Record<string, string> }>;
   /** The unit's billing parties, each with its place and whether the viewer is on it (#38). */
   billing?: Array<{ index: number; name: string; address: PostalAddress; share: number; yours: boolean }>;
 }
 
+/** core's IdentityManager, under the system context once a door has decided (#37). */
+export interface IdentityDoor {
+  /** The user's own identity record: its id and contactPoint entries; null when there is none. */
+  find: (systemCtx: ActorContext, username: string) => Promise<{ id: string; contactPoint?: unknown[] } | null>;
+  update: (systemCtx: ActorContext, id: string, patch: Record<string, unknown>) => Promise<unknown>;
+}
+
 export interface ResidencyManagerOptions {
+  /** core's IdentityManager: occupants' contact details for an owner (#37). */
+  identities?: IdentityDoor;
   /** ngdpbase's decision point, for a resident's own reads (#36). */
   decide?: Decide;
   /** host.systemContext: the reads a resident's page needs, made once the door has decided (#36). */
@@ -179,10 +189,12 @@ export default class ResidencyManager {
   private readonly today: () => string;
   private readonly changes: ResidencyChanges | undefined;
   private readonly decide: Decide | undefined;
+  private readonly identities: IdentityDoor | undefined;
   private readonly systemContext: ((reason: string) => ActorContext) | undefined;
 
   constructor(options: ResidencyManagerOptions) {
     this.decide = options.decide;
+    this.identities = options.identities;
     this.systemContext = options.systemContext;
     this.users = options.users ?? (() => Promise.resolve([]));
     this.accommodation = options.accommodation;
@@ -351,6 +363,14 @@ export default class ResidencyManager {
             };
           }))
       };
+      if (isOwner && this.identities) {
+        // An owner sees the occupants' contact details, to change them (#37).
+        for (const o of unit.occupants) {
+          if (!o.entry) continue;
+          const person = await this.identities.find(system, o.entry.username);
+          o.details = occupantAnswersFrom(person?.contactPoint);
+        }
+      }
       if (isOwner) {
         // Billing parties the unit cannot bill yet (no address, shares off) are left out, not guessed.
         unit.billing = await this.billing(system, id).then(parties => parties.map((p, index) =>
@@ -412,6 +432,61 @@ export default class ResidencyManager {
       throw err;
     }
     await changes.notify?.('Billing address changed', `An owner of unit ${id} changed the address of its billing party ${partyIndex + 1}.`);
+  }
+
+  /** The Occupancy information form's answers as identity-record fields: the one mapping (contactDetails.ts). */
+  contactDetails(answers: Record<string, unknown>): ReturnType<typeof contactDetailsFrom> {
+    return contactDetailsFrom(answers);
+  }
+
+  /**
+   * An owner changes their occupant's phones, work details and emergency contact (#37; operator,
+   * 2026-10-22: it applies at once, with a notice to the reviewers). The door decides with the
+   * owner's context: `accommodation-self`, the caller a current owner of the unit, the person a
+   * current occupant of it, and only those fields; never the occupant's name, email or home
+   * address. Recorded as `accommodation-occupant-update` under the owner first (on-failure refuse;
+   * names, never values), then the occupant's identity record is written by core's IdentityManager
+   * under the system context with a reason naming the owner, unit and occupant (settled with
+   * ngdpbase core, 2026-10-25), then the holders of `accommodation-notices` are told. The kinds an
+   * owner may change are replaced as given; a blank answer clears that kind, and other kinds stay.
+   */
+  async updateOccupantDetails(ctx: ActorContext, id: string, occupant: string, answers: Record<string, unknown>): Promise<void> {
+    const changes = this.changes;
+    if (!changes || !this.identities || !this.decide || !this.systemContext) throw new Error('ResidencyManager was started without its identity door');
+    const decision = await this.decide(ctx, { action: 'accommodation-self' });
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-self', decision);
+    const me = ctx.username ?? '';
+    if (!this.accommodation(id)) throw new LinkChangeRefusedError(`no accommodation ${id}`);
+    const system = this.systemContext(`accommodation: ${me}, an owner of unit ${id}, changes the contact details of its occupant ${occupant}`);
+    if (!(await this.owners(system, id)).some(o => o.username === me)) throw new LinkChangeRefusedError(`you are not a current owner of unit ${id}`);
+    const target = (await this.occupants(system, id)).find(o => o.username === occupant);
+    if (!target) throw new LinkChangeRefusedError(`${occupant} is not a current occupant of unit ${id}`);
+    const unknown = Object.keys(answers).filter(k => !(OCCUPANT_EDITABLE_FIELDS as readonly string[]).includes(k));
+    if (unknown.length > 0) throw new LinkChangeRefusedError(`an owner may not change ${unknown.sort().join(', ')}`);
+    const person = await this.identities.find(system, occupant);
+    if (!person) throw new LinkChangeRefusedError(`${occupant} has no identity record to hold the details`);
+
+    const given = contactDetailsFrom(Object.fromEntries(OCCUPANT_EDITABLE_FIELDS.map(f => [f, answers[f] ?? ''])));
+    const editable = new Set<string>(OCCUPANT_EDITABLE_TYPES);
+    const kept = (person.contactPoint ?? []).filter(c => !editable.has(String((c as Record<string, unknown>)['contactType'])));
+    const answered = OCCUPANT_EDITABLE_FIELDS.filter(f => typeof answers[f] === 'string' && (answers[f] as string).trim() !== '');
+
+    const { metadata: whoMetadata, ...who } = changes.host.actorOf(ctx);
+    const record = (result: 'success' | 'failure', reason?: string): AccommodationAuditRecord => ({
+      eventType: changes.host.addonAuditEventName('accommodation-occupant-update'),
+      ...who, result,
+      action: 'occupant-details-set', severity: 'medium', resource: id, resourceType: 'accommodation',
+      // names, never values
+      metadata: { ...whoMetadata, occupant, owner: occupant, fields: [...answered], ...(reason ? { reason } : {}) }
+    });
+    await changes.recordAudit(record('success'));
+    try {
+      await this.identities.update(system, person.id, { contactPoint: [...kept, ...given.contactPoint] });
+    } catch (err) {
+      await changes.recordAudit(record('failure', err instanceof Error ? err.message : String(err))).catch(() => undefined);
+      throw err;
+    }
+    await changes.notify?.('Occupant details changed by an owner', `An owner of unit ${id} changed an occupant's contact details.`);
   }
 
   /** Every account, by username, as the add-on's pages offer them: display name and email. */

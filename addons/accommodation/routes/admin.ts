@@ -7,6 +7,7 @@
  *   GET  /mine                       a signed-in resident's own units (#36), under accommodation-self
  *   POST /mine/:parcel/billing/:index an owner sets the address of a billing party they are on (#38)
  *   POST /mine/:parcel/occupant-end  an owner ends an occupant's entry on their unit (#37)
+ *   POST /mine/:parcel/occupant-details an owner changes an occupant's phones, work and emergency contact (#37)
  *
  * Seeing them asks `accommodation-read`; a change asks `accommodation-manage` here, and
  * ResidencyManager asks again at its door, records the change and writes it through
@@ -20,6 +21,7 @@ import type ResidencyManager from '../managers/ResidencyManager.js';
 import type { LinkChange, LinkChangeResult } from '../managers/ResidencyManager.js';
 import type { LinkType, UnitLink } from '../managers/unitLinks.js';
 import { unitAddress } from '../managers/billing.js';
+import { OCCUPANT_EDITABLE_FIELDS } from '../managers/contactDetails.js';
 
 interface Engine {
   getManager<T = unknown>(name: string): T | null | undefined;
@@ -188,6 +190,36 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
         } catch (answer) {
           if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
           res.status(500).send('Could not show your accommodation');
+        }
+      }
+    })();
+  });
+
+  router.post('/mine/:parcel/occupant-details', (req: Request, res: Response) => {
+    void (async () => {
+      const ctx = ApiContext.from(req, engine as never);
+      try {
+        await ctx.requirePermission('accommodation-self');
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        // Only the fields an owner may change are passed on; the manager refuses anything else.
+        const answers = Object.fromEntries(OCCUPANT_EDITABLE_FIELDS.map(f => [f, text(body, f)]));
+        await managers().residency.updateOccupantDetails(ctx.getActor(), String(req.params['parcel']), text(body, 'username'), answers);
+        res.redirect('/addons/accommodation/mine?flash=occupant-details');
+      } catch (err) {
+        try {
+          if ((err as Error).name === 'AccommodationRefusedError') {
+            const refused = err as { permission: string; decision: never };
+            await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
+          }
+          if ((err as Error).name === 'LinkChangeRefusedError') {
+            res.redirect(`/addons/accommodation/mine?flash=refused&reason=${encodeURIComponent((err as Error).message)}`);
+            return;
+          }
+          throw err;
+        } catch (answer) {
+          if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
+          host.logger.error(`[accommodation] An owner's change to an occupant's details failed: ${answer instanceof Error ? answer.message : String(answer)}`);
+          res.status(500).send("The occupant's details were not saved");
         }
       }
     })();

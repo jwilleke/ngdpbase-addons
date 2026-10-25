@@ -59,6 +59,10 @@ interface UserManagerLike {
   searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<UserRecord[]>;
   updateUser(username: string, updates: (current: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>, ctx: ActorContext): Promise<unknown>;
 }
+interface IdentityManagerLike {
+  getByUserIdentifier(ctx: ActorContext, username: string): Promise<{ '@id': string; contactPoint?: unknown[] } | null>;
+  update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<unknown>;
+}
 interface AddonsManagerLike {
   registerDashboardCard(card: { addonName: string; title: string; icon: string; adminUrl: string }): void;
 }
@@ -127,6 +131,19 @@ const AccommodationAddon = {
       accommodation: (id) => accommodationManager.get(id),
       // A resident's own page (#36): decided with their context, then read as the system with a reason.
       decide,
+      // Occupants' contact details for their owner (#37), through core's IdentityManager once the door has decided.
+      identities: {
+        // The account's own identity record, by the guide's door for it.
+        find: async (systemCtx, username) => {
+          const found = await engine.getManager<IdentityManagerLike>('IdentityManager')?.getByUserIdentifier(systemCtx, username);
+          return found ? { id: found['@id'], contactPoint: found.contactPoint } : null;
+        },
+        update: async (systemCtx, id, patch) => {
+          const identities = engine.getManager<IdentityManagerLike>('IdentityManager');
+          if (!identities) throw new Error('IdentityManager is not available');
+          return identities.update(systemCtx, id, patch);
+        }
+      },
       systemContext: (reason) => host.systemContext(reason),
       // The admin page's changes (#28): the entries are written onto the account through UserManager.
       changes: {

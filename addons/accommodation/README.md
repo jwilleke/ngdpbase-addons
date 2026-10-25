@@ -126,8 +126,20 @@ sees none, and is pointed at the Occupancy information form.
 - __An occupant moved out__ ([#37](https://github.com/jwilleke/ngdpbase-addons/issues/37)): an owner sets
   the last date of a current occupant's entry on their own unit. It goes through `changeLink`, which,
   without `accommodation-manage`, lets a current owner of the entry's unit end an occupies entry and
-  nothing else. It is recorded the same way, and the holders of `accommodation-notices` are told. An
-  owner editing an occupant's phones and emergency contact, and adding an occupant, come later.
+  nothing else. It is recorded the same way, and the holders of `accommodation-notices` are told.
+- __An occupant's contact details__ (#37): an owner sees and changes a current occupant's home and
+  other phones, business mailing address and phone, and emergency contact, never their name, email or
+  home address. `ResidencyManager.updateOccupantDetails` decides with the owner's context
+  (`accommodation-self`, a current owner, a current occupant of that unit, only those fields). It
+  records `accommodation-occupant-update` as the owner first (on-failure `refuse`; names, never
+  values). Then core's `IdentityManager` writes the occupant's identity record under the system
+  context with a reason naming the owner, unit and occupant, and the board is told. Those kinds are
+  replaced as given (a blank box clears one), and every other kind on the record stays. Adding an
+  occupant comes later.
+- The mapping from the form's answers to identity-record fields (`address`, and `contactPoint` entries
+  typed by `contactType`) lives in `managers/contactDetails.ts`. association's approve uses it through
+  `ResidencyManager.contactDetails`, so it has one home. accommodation needs ngdpbase 5.30.0
+  (`IdentityManager`).
 
 ## Owner and occupant roles
 

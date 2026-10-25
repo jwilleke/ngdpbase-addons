@@ -50,6 +50,14 @@
         "on-failure": "refuse",
         "description": "Billing address changed by an owner"
       }
+    },
+    "accommodation-occupant-update": {
+      "description": "An owner changed their occupant's phones, work details or emergency contact; who, the unit, the occupant and the field names, never the values",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Occupant contact details changed by an owner"
+      }
     }
   },
   "ngdpbase.roles.definitions": {
