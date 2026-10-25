@@ -53,7 +53,7 @@ last_updated: "2026-10-24"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-- [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
+*None.*
 
 ## ⏸ Deferred
 
