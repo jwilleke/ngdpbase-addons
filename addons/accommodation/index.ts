@@ -109,7 +109,9 @@ const AccommodationAddon = {
       provider: await createProvider(providerName, dataPath),
       categories: categoriesFrom(config['categories']),
       lateCharges: lateChargesFrom(config['late-charges']),
-      bump: () => engine.getManager<CacheManagerLike>('CacheManager')?.bump('AccommodationManager') ?? Promise.resolve()
+      bump: () => engine.getManager<CacheManagerLike>('CacheManager')?.bump('AccommodationManager') ?? Promise.resolve(),
+      // One change at a time, from read to save (#39).
+      serial: host.keyedSerial()
     });
     await accommodations.initialize();
     engine.registerManager('AccommodationManager', accommodations);
@@ -150,11 +152,7 @@ const AccommodationAddon = {
         decide, recordAudit, host,
         updateUser: (username, update, ctx) => userManager().updateUser(username, update, ctx),
         // An owner's billing address (#38): written as the system, after the owner's own decision and record.
-        writeBilling: async (systemCtx, id, billing) => {
-          const accommodation = accommodationManager.get(id);
-          if (!accommodation) throw new Error(`no accommodation ${id}`);
-          await accommodationManager.upsert(systemCtx, { ...accommodation, billing });
-        },
+        writeBilling: (systemCtx, id, billing) => accommodationManager.update(systemCtx, id, current => ({ ...current, billing })),
         notify: async (title, message) => {
           try {
             const holders = await pdp?.usersHolding('accommodation-notices');

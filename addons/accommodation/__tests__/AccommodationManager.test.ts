@@ -43,10 +43,12 @@ describe('AccommodationManager', () => {
   });
   const ctx = contextFor('treasurer');
 
-  async function open(units = SAMPLE_ACCOMMODATIONS): Promise<AccommodationManager> {
+  async function open(units = SAMPLE_ACCOMMODATIONS, serial: boolean = true): Promise<AccommodationManager> {
     writeFileSync(path.join(dataPath, 'accommodations.json'), JSON.stringify(units));
     const manager = new AccommodationManager({
       ...wiring(),
+      // core's own KeyedSerial, as the host hands it (#39)
+      ...(serial ? { serial: host.keyedSerial() } : {}),
       provider: await createProvider('json', dataPath),
       categories: categoriesFrom(FAIRWAYS_CATEGORIES),
       lateCharges: lateChargesFrom(FAIRWAYS_LATE_CHARGES),
@@ -182,5 +184,25 @@ describe('AccommodationManager', () => {
     const options = await m.toFormOptions({}, contextFor('anonymous'));
     expect(options).toEqual([{ value: '66-00001.000', label: '101 Sample Dr' }, { value: 'p-1', label: 'p-1' }]);
     expect(JSON.stringify(options)).not.toMatch(/pat\.example|sam\.example|Pat Example|Sam Example/);
+  });
+
+  test('two changes at the same moment, to two accommodations, both stand (#39)', async () => {
+    const m = await open();
+    await Promise.all([
+      m.update(ctx, '66-00001.000', a => ({ ...a, notes: 'first' })),
+      m.update(ctx, '66-00002.000', a => ({ ...a, notes: 'second' })),
+      m.upsert(ctx, { ...SAMPLE_ACCOMMODATIONS[2], notes: 'third' })
+    ]);
+    expect([m.get('66-00001.000')?.notes, m.get('66-00002.000')?.notes, m.get('66-00003.000')?.notes]).toEqual(['first', 'second', 'third']);
+    const saved = JSON.parse(readFileSync(path.join(dataPath, 'accommodations.json'), 'utf8')) as Array<{ id: string; notes?: string }>;
+    expect(saved.map(a => a.notes)).toEqual(['first', 'second', 'third']);
+  });
+
+  test('update reads the record as it is now, records the fields it changes, and refuses an unknown one', async () => {
+    const m = await open();
+    await m.update(ctx, '66-00002.000', a => ({ ...a, notes: 'changed' }));
+    expect(audits.at(-1)).toMatchObject({ action: 'accommodation-update', resource: '66-00002.000', metadata: { fields: ['notes'] } });
+    await expect(m.update(ctx, '99-99999.000', a => a)).rejects.toThrow('no accommodation 99-99999.000');
+    await expect(m.update(board, '66-00002.000', a => a)).rejects.toBeInstanceOf(AccommodationRefusedError);
   });
 });

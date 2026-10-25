@@ -14,7 +14,10 @@
  * the accommodation keeps only its billing parties (`billing`, #14).
  *
  * Every write goes through write(), which saves and then bumps the
- * 'AccommodationManager' cache topic, so pages showing accommodations re-render.
+ * 'AccommodationManager' cache topic, so pages showing accommodations re-render. Every change
+ * runs, from its read to its save, inside one key of core's KeyedSerial (`host.keyedSerial()`,
+ * ngdpbase 5.30.1; #39): the provider saves every accommodation in one file, so two changes, to
+ * the same accommodation or to two, never overwrite each other.
  *
  * The manager is the enforcement point for changes to accommodations
  * (https://github.com/jwilleke/ngdpbase-addons/issues/5): upsert and delete ask
@@ -80,7 +83,12 @@ export interface AccommodationManagerOptions {
   host: Pick<AddonHost, 'actorOf' | 'addonAuditEventName'>;
   /** CacheManager.bump for this manager's topic; absent in tests. */
   bump?: () => Promise<unknown>;
+  /** core's KeyedSerial (`host.keyedSerial()`): one change at a time; absent, changes run as called (tests). */
+  serial?: { run<T>(key: string, task: () => Promise<T>): Promise<T> };
 }
+
+/** The one key every change runs under: the provider keeps every accommodation in one file. */
+const STORE_KEY = 'accommodations';
 
 /** The providers config can name, each loaded only when chosen. */
 const PROVIDERS: Record<string, (dataPath: string) => Promise<AccommodationProvider>> = {
@@ -102,8 +110,10 @@ export default class AccommodationManager {
   private readonly decide: Decide;
   private readonly recordAudit: (record: AccommodationAuditRecord) => Promise<void>;
   private readonly host: Pick<AddonHost, 'actorOf' | 'addonAuditEventName'>;
+  private readonly serial: NonNullable<AccommodationManagerOptions['serial']>;
 
   constructor(options: AccommodationManagerOptions) {
+    this.serial = options.serial ?? { run: (_key, task) => task() };
     this.provider = options.provider;
     this.categories = options.categories;
     this.lateChargeRules = options.lateCharges ?? [];
@@ -186,21 +196,38 @@ export default class AccommodationManager {
   async upsert(ctx: ActorContext, accommodation: Accommodation): Promise<void> {
     if (typeof accommodation.id !== 'string' || accommodation.id === '') throw new Error('accommodation.id (the parcel) is required');
     await this.authorize(ctx, 'accommodation-manage');
-    const before = this.accommodations.get(accommodation.id);
-    const fields = [...new Set([...Object.keys(before ?? {}), ...Object.keys(accommodation)])]
-      .filter(k => JSON.stringify(before?.[k]) !== JSON.stringify(accommodation[k]))
-      .sort();
-    await this.audit(ctx, before ? 'accommodation-update' : 'accommodation-create', accommodation.id, { fields });
-    await this.write(all => all.set(accommodation.id, accommodation));
+    await this.serial.run(STORE_KEY, async () => {
+      const before = this.accommodations.get(accommodation.id);
+      await this.audit(ctx, before ? 'accommodation-update' : 'accommodation-create', accommodation.id, { fields: changedFields(before, accommodation) });
+      await this.write(all => all.set(accommodation.id, accommodation));
+    });
+  }
+
+  /**
+   * Changes one accommodation as it is now: `change` is handed a copy of the stored record, read
+   * inside the same step as the write (#39), and returns the new one. Needs accommodation-manage;
+   * recorded first. Refused when there is no such accommodation.
+   */
+  async update(ctx: ActorContext, id: string, change: (current: Accommodation) => Accommodation): Promise<void> {
+    await this.authorize(ctx, 'accommodation-manage');
+    await this.serial.run(STORE_KEY, async () => {
+      const before = this.accommodations.get(id);
+      if (!before) throw new Error(`no accommodation ${id}`);
+      const next = { ...change(structuredClone(before)), id };
+      await this.audit(ctx, 'accommodation-update', id, { fields: changedFields(before, next) });
+      await this.write(all => all.set(id, next));
+    });
   }
 
   /** Removes the accommodation. Needs accommodation-manage; recorded first. */
   async delete(ctx: ActorContext, id: string): Promise<boolean> {
     await this.authorize(ctx, 'accommodation-manage');
-    if (!this.accommodations.has(id)) return false;
-    await this.audit(ctx, 'accommodation-delete', id, {});
-    await this.write(all => all.delete(id));
-    return true;
+    return this.serial.run(STORE_KEY, async () => {
+      if (!this.accommodations.has(id)) return false;
+      await this.audit(ctx, 'accommodation-delete', id, {});
+      await this.write(all => all.delete(id));
+      return true;
+    });
   }
 
   /** Ask the decision point with the caller's context; a "no" throws AccommodationRefusedError. */
@@ -223,7 +250,7 @@ export default class AccommodationManager {
     });
   }
 
-  /** The one write path: change a copy, save it, keep it, then tell the page cache. */
+  /** The one write path, called only inside `serial.run`: change a copy, save it, keep it, then tell the page cache. */
   private async write(change: (accommodations: Map<string, Accommodation>) => unknown): Promise<void> {
     const next = new Map(this.accommodations);
     change(next);
@@ -231,4 +258,11 @@ export default class AccommodationManager {
     this.accommodations = next;
     await this.bump();
   }
+}
+
+/** The names of the fields `after` gives a different value from `before`, sorted. */
+function changedFields(before: Accommodation | undefined, after: Accommodation): string[] {
+  return [...new Set([...Object.keys(before ?? {}), ...Object.keys(after)])]
+    .filter(k => JSON.stringify(before?.[k]) !== JSON.stringify(after[k]))
+    .sort();
 }
