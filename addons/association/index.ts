@@ -78,7 +78,7 @@ let unavailable: string | null = 'not registered yet';
 
 const AssociationAddon = {
   name: 'association',
-  version: '0.1.0',
+  version: '0.2.0',
   description: "A unit owners association's rules, on top of accommodation",
   author: 'jwilleke',
   // accommodation loads first; without it this add-on does not load.

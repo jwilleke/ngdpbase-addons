@@ -121,7 +121,6 @@ export interface OccupancyManagerOptions {
   now?: () => Date;
 }
 
-const ENTRY_TYPES: Record<string, 'owner' | 'occupant'> = { Owner: 'owner', Occupant: 'occupant' };
 
 /** A form answer as a trimmed string; anything else is empty. */
 function answer(data: Record<string, unknown>, name: string): string {
@@ -139,15 +138,16 @@ export default class OccupancyManager {
   }
 
   /**
-   * Keep one submission for review, as the person who sent it (`ctx`, anonymous or not).
-   * Refused, with nothing kept: an entry type that is not Owner or Occupant, no email, or
+   * Keep one owner's submission for review, as the person who sent it (`ctx`, anonymous or not).
+   * Refused, with nothing kept: no answer to whether they are already an owner, no email, or
    * an entry accommodation would refuse (an unknown unit, a bad date, a last date before the
    * first). A blank last date is "current".
    */
   async queue(ctx: ActorContext, submission: OccupancySubmission): Promise<OccupancyResult> {
     const { data } = submission;
-    const type = ENTRY_TYPES[answer(data, 'entryType')];
-    if (!type) return { ok: false, error: 'Please correct the marked fields', fields: { entryType: 'Choose Owner or Occupant' } };
+    // Owners only (operator, 2026-10-25): occupants are added by a signed-in owner, not through this form.
+    const type = 'owner' as const;
+    if (!['Yes', 'No'].includes(answer(data, 'existingOwner'))) return { ok: false, error: 'Please correct the marked fields', fields: { existingOwner: 'Choose Yes or No' } };
     if (!answer(data, 'email')) return { ok: false, error: 'Please correct the marked fields', fields: { email: 'An email is required' } };
     const unit = answer(data, 'unit');
     const entry = { parcel: unit, type, from: answer(data, 'from'), to: answer(data, 'to') || 'current' };

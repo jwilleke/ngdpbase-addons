@@ -23,4 +23,11 @@ describe('Occupancy information form', () => {
     const unit = occupancyForm.fields.find(f => f.name === 'unit');
     expect(unit).toMatchObject({ type: 'dropdown', optionsSource: 'fetch:AccommodationManager.toFormOptions()' });
   });
+
+  test('is for owners only, and asks whether they are already an owner (operator, 2026-10-25)', () => {
+    const names = occupancyForm.fields.map(f => f.name);
+    expect(names).not.toContain('entryType');
+    expect(JSON.stringify(occupancyForm)).not.toMatch(/'Occupant'|"Occupant"/);
+    expect(occupancyForm.fields.find(f => f.name === 'existingOwner')).toMatchObject({ type: 'dropdown', required: true, options: ['Yes', 'No'] });
+  });
 });

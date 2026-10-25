@@ -5,7 +5,9 @@
  *
  * A definition for the forms add-on, registered by index.ts at every start
  * (registerShippedForm) with the handler that keeps each submission for review
- * (#32). Every question is a plain field: the forms add-on has no conditional
+ * (#32). For owners only, every submission approved before it applies (operator, 2026-10-25):
+ * a signed-in owner then manages the unit's occupants, owners and billing from My accommodation.
+ * Every question is a plain field: the forms add-on has no conditional
  * fields, so the "if working" and "if an agent" fields are optional and say so
  * (operator, 2026-10-22).
  */
@@ -15,8 +17,9 @@ export const OCCUPANCY_FORM_ID = 'association-occupancy';
 export const occupancyForm = {
   id: OCCUPANCY_FORM_ID,
   title: 'Occupancy information',
-  description: 'Ohio Revised Code 5311.09 asks the association to keep contact information for each unit owner and all occupants. '
-    + 'New residents, and anyone whose information has changed, please fill this in for the owner and for every occupant.',
+  description: 'Ohio Revised Code 5311.09 asks the association to keep contact information for each unit owner. '
+    + 'For owners: fill this in when you become an owner, or when your information changes. The association reviews it before anything is changed. '
+    + 'Once approved, sign in to add your unit\'s occupants and its billing address.',
   // The add-on's handler keeps the record and sends its own notices (#17).
   store: false,
   notify: false,
@@ -26,18 +29,18 @@ export const occupancyForm = {
     { name: 'email', type: 'email', label: 'Email', required: true },
     { name: 'firstName', type: 'text', label: 'First name', required: true },
     { name: 'lastName', type: 'text', label: 'Last name', required: true },
-    { name: 'entryType', type: 'dropdown', label: 'Entry type', required: true, options: ['Owner', 'Occupant'],
-      description: 'Owner if this person owns the unit, otherwise Occupant. An owner who lives in the unit: Owner, then fill the form again as Occupant.' },
+    { name: 'existingOwner', type: 'dropdown', label: 'Are you already an owner in this association?', required: true, options: ['Yes', 'No'],
+      description: 'Yes if you already own a unit here, for example when you are adding another unit you own.' },
     { name: 'unit', type: 'dropdown', label: 'Unit address', required: true, optionsSource: 'fetch:AccommodationManager.toFormOptions()',
-      description: 'The unit this person owns or lives in.' },
+      description: 'The unit you own.' },
     { name: 'from', type: 'date', label: 'First date', required: true,
-      description: 'The date this person became an owner or occupant of the unit.' },
+      description: 'The date you became an owner of the unit.' },
     { name: 'to', type: 'date', label: 'Last date',
-      description: 'Only if this person is no longer an owner or occupant of the unit.' },
+      description: 'Only if you no longer own the unit.' },
 
     { name: 'home', type: 'section', label: 'Home (ORC 5311.09(A)(2)(a))' },
     { name: 'homeAddress', type: 'textarea', label: 'Home address',
-      description: 'Only for an owner who does not live in the unit. An occupant\'s home address is the unit.' },
+      description: 'Only if you do not live in the unit.' },
     { name: 'homeMailingAddress', type: 'textarea', label: 'Home mailing address',
       description: 'Only if different from the home address.' },
     { name: 'homePhone', type: 'tel', label: 'Home phone', required: true,

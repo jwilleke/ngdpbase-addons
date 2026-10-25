@@ -53,12 +53,16 @@ It replaces The Fairways' Google form "Contact information".
 - The form (`association-occupancy`) is shipped to the forms add-on at every start
   (`registerShippedForm`) and is read-only on the site. It keeps no submission file and sends no
   notice of its own (`store: false`, `notify: false`): this add-on's record is the record.
+- It is for owners only (operator, 2026-10-25), and asks whether the person is already an owner in
+  the association; an owner adding another unit they own uses it too. Once approved, the owner signs
+  in and adds the unit's occupants and its billing address from accommodation's My accommodation;
+  occupants never use this form.
 - Anyone may fill it in, signed in or not. The unit choice is the list of units by street address,
   from accommodation, under its `accommodation-units-list` permission (every visitor and every user),
   never with names.
 - Every submission waits for review
   ([#32](https://github.com/jwilleke/ngdpbase-addons/issues/32)). The handler refuses a bad answer
-  with its reason: an entry type that is not Owner or Occupant, no email, or an entry accommodation
+  with its reason: no answer to whether they are already an owner, no email, or an entry accommodation
   would refuse (an unknown unit, a bad date, a last date before the first, checked by
   `ResidencyManager.checkEntry`). A blank last date is `current`.
 - It records `occupancy-submit` before it keeps anything (on-failure `refuse`): who sent it, the unit,

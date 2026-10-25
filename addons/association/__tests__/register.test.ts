@@ -70,7 +70,7 @@ describe('association register()', () => {
 
     const handler = engine.handlers.get(OCCUPANCY_FORM_ID)!;
     const req = { userContext: { username: 'anonymous', roles: ['anonymous'], isAuthenticated: false } };
-    const result = await handler({ id: 's-1', submittedBy: 'anonymous', data: { email: 'a@example.org', entryType: 'Owner', unit: '66-00001.000', from: '2026-10-01' } }, { engine, req });
+    const result = await handler({ id: 's-1', submittedBy: 'anonymous', data: { email: 'a@example.org', existingOwner: 'No', unit: '66-00001.000', from: '2026-10-01' } }, { engine, req });
     expect(result).toEqual({ ok: true });
     expect(await AssociationAddon.status()).toEqual({ healthy: true, message: 'On 3 accommodation(s); 1 occupancy submission(s) waiting for review' });
     await AssociationAddon.shutdown();
