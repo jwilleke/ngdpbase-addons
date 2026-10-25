@@ -44,7 +44,7 @@ interface ResidencyManagerLike {
 interface UserManagerLike {
   searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<Array<{ username: string; email?: string }>>;
 }
-interface PersonManagerLike {
+interface IdentityManagerLike {
   search(ctx: ActorContext, query: string, options?: { limit?: number }): Promise<Array<{ '@id': string; identifier: string; contactPoint?: unknown[] }>>;
   update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<unknown>;
 }
@@ -118,7 +118,7 @@ const AssociationAddon = {
       pdp ? pdp.decide(ctx, request) : { permit: false, applicable: false, reason: 'no_decision_point' } as Decision;
     // Approving (#33) goes through accommodation, core's users and core's contacts, each as the reviewer.
     const users = engine.getManager<UserManagerLike>('UserManager');
-    const persons = engine.getManager<PersonManagerLike>('PersonManager');
+    const persons = engine.getManager<IdentityManagerLike>('IdentityManager');
     const approval: ApprovalDoors | undefined = users && persons ? {
       searchUsers: (ctx, email) => users.searchUsers(email, { limit: 2, activeOnly: false }, ctx),
       addEntry: async (ctx, username, entry) => (await residency.changeLink(ctx, username, { op: 'add', link: entry })).at,

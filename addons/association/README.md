@@ -83,20 +83,20 @@ waiting, with their answers ([#33](https://github.com/jwilleke/ngdpbase-addons/i
   - Add the ownership or occupies entry through accommodation's `changeLink`, which also asks
     `accommodation-manage`. A reviewer needs both permissions; association does not grant
     `accommodation-manage`.
-  - Write the details to the person's identity record through `PersonManager.update`
-    (`contact-manage`). The home address goes in `address`. Every other address and phone, the agent
+  - Write the details to the person's identity record through `IdentityManager.update`
+    (`identity-manage`). The home address goes in `address`. Every other address and phone, the agent
     and the emergency contact go in `contactPoint`, each typed by `contactType` (`mailing`, `home`,
     `other`, `business`, `agent`, `emergency`). Kinds the form does not write are kept.
   - Mark the submission approved.
 - If the details cannot be written, the entry is removed again, the submission stays pending, and the
   failure is recorded. If that removal fails too, the error says the entry is still in effect.
-- association's review policy grants admins `contact-read`, `contact-manage` and `search-user` with
+- association's review policy grants admins `identity-read`, `identity-manage` and `search-user` with
   `association-review`.
 - Not yet: creating an account for someone new
   ([#34](https://github.com/jwilleke/ngdpbase-addons/issues/34)), and applying a signed-in owner's or
   occupant's own-unit submission directly ([#35](https://github.com/jwilleke/ngdpbase-addons/issues/35)).
 - The details use core's own schema.org types (`ContactPointEntry`: a `ContactPoint` or a
-  `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.29.1 or later.
+  `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.30.0 or later (IdentityManager, `identity-manage`).
 
 ## Develop
 

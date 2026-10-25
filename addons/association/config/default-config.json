@@ -32,7 +32,7 @@
     {
       "id": "association-review-access",
       "name": "Association: review",
-      "description": "Admins review occupancy submissions on day one. Approving writes the person's details (contact-read, contact-manage) and finds their account (search-user); it also needs accommodation-manage, which accommodation's own policy grants. A site grants these to its board in its own policy.",
+      "description": "Admins review occupancy submissions on day one. Approving writes the person's details (identity-read, identity-manage) and finds their account (search-user); it also needs accommodation-manage, which accommodation's own policy grants. A site grants these to its board in its own policy.",
       "priority": 90,
       "effect": "allow",
       "subjects": [
@@ -49,8 +49,8 @@
       ],
       "actions": [
         "association-review",
-        "contact-read",
-        "contact-manage",
+        "identity-read",
+        "identity-manage",
         "search-user"
       ]
     }

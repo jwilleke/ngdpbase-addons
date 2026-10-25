@@ -10,7 +10,7 @@
  * Review (#33): `pending` lists what waits, `reject` refuses one and `approve` applies one for
  * a person who has an account: their ownership or occupies entry (accommodation's changeLink,
  * which asks `accommodation-manage` itself) and their details on their identity record
- * (PersonManager, `contact-manage`), in schema.org shape: the home address as `address`, every
+ * (IdentityManager, `identity-manage`), in schema.org shape: the home address as `address`, every
  * other address and phone as a `contactPoint` typed by `contactType`. Each asks the decision
  * point for `association-review` with the reviewer's context (this manager is the
  * enforcement point for its submissions) and a "no" throws OccupancyRefusedError for
@@ -45,7 +45,7 @@ export interface ApprovalDoors {
   /** ResidencyManager.changeLink: add, and remove for the undo. */
   addEntry: (ctx: ActorContext, username: string, entry: NewEntry) => Promise<EntryRef | undefined>;
   removeEntry: (ctx: ActorContext, username: string, at: EntryRef) => Promise<void>;
-  /** PersonManager.search and update: the person's own identity record. */
+  /** IdentityManager.search and update: the person's own identity record. */
   findPerson: (ctx: ActorContext, username: string, email: string) => Promise<{ id: string; contactPoint?: unknown[] } | null>;
   updatePerson: (ctx: ActorContext, id: string, patch: Record<string, unknown>) => Promise<unknown>;
 }
