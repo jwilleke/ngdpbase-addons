@@ -7,6 +7,8 @@
 
   <% if (flash === 'saved') { %>
     <div class="alert alert-success" data-testid="flash-saved">Saved. The owner and occupant roles follow it when the roles job has run (Admin → Scheduled Jobs).</div>
+  <% } else if (flash === 'new-person') { %>
+    <div class="alert alert-warning" data-testid="flash-new-person">Nobody has an account named "<%= reason %>". If this is someone new, check their details under "Someone with no account yet" below and click Add: the account and the entry are made together. Otherwise choose the person from the list.</div>
   <% } else if (flash === 'saved-new') { %>
     <div class="alert alert-success" data-testid="flash-saved-new">Saved, with a new account (no password, no invitation sent). The roles follow when the roles job has run.</div>
   <% } else if (flash === 'saved-invited') { %>

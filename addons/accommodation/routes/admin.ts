@@ -190,6 +190,15 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           res.redirect(`${back}?flash=${made.invitation ? 'saved-invited' : 'saved-new'}`);
           return;
         }
+        // A name typed where an account is chosen: offer it as someone new, with everything kept.
+        if (change.op === 'add' && !(await managers().residency.people(ctx.getActor())).some(p => p.username === text(body, 'username'))) {
+          const draft = Object.fromEntries(['type', 'from', 'to', 'share', 'newEmail', 'invite'].map(k => [k, text(body, k)]));
+          await renderUnit(req, res, ctx, parcel, {
+            flash: 'new-person', reason: text(body, 'username'),
+            draft: { ...draft, username: '', newName: text(body, 'newName') || text(body, 'username'), newUsername: text(body, 'newUsername') }
+          });
+          return;
+        }
         const result = await managers().residency.changeLink(ctx.getActor(), text(body, 'username'), change);
         res.redirect(afterChange(parcel, result));
       } catch (err) {
