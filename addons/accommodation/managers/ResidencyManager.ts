@@ -109,6 +109,10 @@ export interface ResidencyChanges {
    * inside the account's own key, and returns the fields to write, or undefined for none.
    */
   updateUser: (username: string, update: (current: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>, ctx: ActorContext) => Promise<unknown>;
+  /** UserManager.createUser with no password, under the system context, once the owner's door has decided (#37). */
+  createUser?: (systemCtx: ActorContext, user: { username: string; email: string; displayName: string }) => Promise<{ username: string }>;
+  /** AuthManager.inviteUser, under the system context: 'sent', or why nothing was sent. */
+  inviteUser?: (systemCtx: ActorContext, username: string) => Promise<{ outcome: string; reason?: string }>;
   /**
    * AccommodationManager's write of the unit's billing parties, under the system context with a
    * reason naming the owner (#38); the owner's own decision and record come first, in this manager.
@@ -502,6 +506,72 @@ export default class ResidencyManager {
     await changes.notify?.('Occupant details changed by an owner', `An owner of unit ${id} changed an occupant's contact details.`);
   }
 
+  /**
+   * A signed-in owner adds an occupant to their unit (#37; operator, 2026-10-25: no approval, also
+   * for someone with no account). The door decides with the owner's context: `accommodation-self`
+   * and a current owner of the unit, for an occupies entry on that unit only. The account is found
+   * by email; more than one is never guessed, and with none the owner names a username for a new
+   * one. Recorded as `accommodation-occupant-add` under the owner first (on-failure refuse; names,
+   * never values). A new account is then made with no password and invited, under the system
+   * context with a reason naming the owner and unit; the entry is added through changeLink as the
+   * owner; and the holders of `accommodation-notices` are told. If a later step fails, a new
+   * account stays, and adding again finds it.
+   */
+  async addOccupant(ctx: ActorContext, id: string, person: { email: string; name: string; username?: string; from: string; to?: string }):
+    Promise<{ username: string; created: boolean; invitation?: { outcome: string; reason?: string } }> {
+    const changes = this.changes;
+    if (!changes?.createUser || !changes.inviteUser || !this.decide || !this.systemContext) throw new Error('ResidencyManager was started without its account door');
+    const decision = await this.decide(ctx, { action: 'accommodation-self' });
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-self', decision);
+    const me = ctx.username ?? '';
+    const system = this.systemContext(`accommodation: ${me}, an owner of unit ${id}, adds an occupant`);
+    if (!this.accommodation(id)) throw new LinkChangeRefusedError(`no accommodation ${id}`);
+    if (!(await this.owners(system, id)).some(o => o.username === me)) throw new LinkChangeRefusedError(`you are not a current owner of unit ${id}`);
+    const email = person.email.trim();
+    if (!/^[^\s@]+@[^\s@]+$/.test(email)) throw new LinkChangeRefusedError('an occupant needs an email address');
+    const entry = { parcel: id, type: 'occupant' as const, from: person.from, to: person.to?.trim() || 'current' };
+    const problem = this.checkEntry(entry);
+    if (problem) throw new LinkChangeRefusedError(problem);
+
+    const matches = (await this.users(system)).filter(u => (u.email ?? '').trim().toLowerCase() === email.toLowerCase());
+    if (matches.length > 1) throw new LinkChangeRefusedError(`more than one account has the email ${email}; ask an administrator`);
+    const username = matches.length === 1 ? matches[0].username : (person.username ?? '').trim();
+    if (matches.length === 0 && !/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(username)) {
+      throw new LinkChangeRefusedError(`no account has the email ${email}; give a username for a new one (letters, digits, . _ -)`);
+    }
+
+    const { metadata: whoMetadata, ...who } = changes.host.actorOf(ctx);
+    const record = (result: 'success' | 'failure', reason?: string): AccommodationAuditRecord => ({
+      eventType: changes.host.addonAuditEventName('accommodation-occupant-add'),
+      ...who, result,
+      action: 'occupant-add', severity: 'medium', resource: id, resourceType: 'accommodation',
+      metadata: { ...whoMetadata, occupant: username, owner: username, newAccount: matches.length === 0, ...(reason ? { reason } : {}) }
+    });
+    await changes.recordAudit(record('success'));
+    const failed = async (reason: string, err: unknown): Promise<never> => {
+      await changes.recordAudit(record('failure', reason)).catch(() => undefined);
+      throw err;
+    };
+
+    let invitation: { outcome: string; reason?: string } | undefined;
+    if (matches.length === 0) {
+      try {
+        await changes.createUser(system, { username, email, displayName: person.name.trim() || username });
+        invitation = await changes.inviteUser(system, username);
+      } catch (err) {
+        return failed(`the account ${username} was not made: ${err instanceof Error ? err.message : String(err)}`, err);
+      }
+    }
+    try {
+      await this.changeLink(ctx, username, { op: 'add', link: entry });
+    } catch (err) {
+      const still = matches.length === 0 ? `; the new account ${username} stays, and adding again finds it` : '';
+      return failed(`the occupancy was not added${still}: ${err instanceof Error ? err.message : String(err)}`, err);
+    }
+    await changes.notify?.('Occupant added by an owner', `An owner of unit ${id} added an occupant${matches.length === 0 ? ' with a new account' : ''}.`);
+    return { username, created: matches.length === 0, ...(invitation ? { invitation } : {}) };
+  }
+
   /** Every account, by username, as the add-on's pages offer them: display name and email. */
   async people(ctx: ActorContext): Promise<UnitMember[]> {
     return (await this.users(ctx)).map(memberOf).sort((a, b) => a.username.localeCompare(b.username));
@@ -571,7 +641,7 @@ export default class ResidencyManager {
     const changes = this.changes;
     if (!changes) throw new Error('ResidencyManager was started without its write side');
     const decision = await changes.decide(ctx, { action: 'accommodation-manage' });
-    const byOwner = !decision.permit && await this.ownerMayEnd(ctx, username, change);
+    const byOwner = !decision.permit && await this.ownerMayChange(ctx, username, change);
     if (!decision.permit && !byOwner) throw new AccommodationRefusedError('accommodation-manage', decision);
 
     if (!(await this.users(ctx)).some(u => u.username === username)) throw new LinkChangeRefusedError(`no account named ${username}`);
@@ -610,7 +680,7 @@ export default class ResidencyManager {
     if (!done) return { changed: false };
 
     await changes.followRoles?.(ctx);
-    if (byOwner) {
+    if (byOwner && change.op === 'end') {
       await changes.notify?.('Occupant ended by an owner', `An owner of unit ${(planned as { parcel: string } | null)?.parcel ?? ''} ended an occupant's entry.`);
     }
     if (change.op !== 'add') return { changed: true };
@@ -619,15 +689,20 @@ export default class ResidencyManager {
   }
 
   /**
-   * Whether the caller may end this occupant's entry as an owner of its unit (#37): an `end` of an
-   * occupies entry, `accommodation-self`, and a current ownership entry on the entry's unit. The
-   * entry is read here to find its unit; the write then checks it has not changed since.
+   * Whether the caller may make this change as an owner of the unit (#37): `accommodation-self`, a
+   * current ownership entry on the unit, and either adding an occupies entry on that unit or ending
+   * one. For an end, the entry is read here to find its unit; the write then checks it has not
+   * changed since. Never an owner's entry: those need approval (#40).
    */
-  private async ownerMayEnd(ctx: ActorContext, username: string, change: LinkChange): Promise<boolean> {
-    if (change.op !== 'end' || change.at.type !== 'occupant' || !this.decide || !this.systemContext || !ctx.username) return false;
+  private async ownerMayChange(ctx: ActorContext, username: string, change: LinkChange): Promise<boolean> {
+    if (!this.decide || !this.systemContext || !ctx.username) return false;
+    const adding = change.op === 'add' && change.link.type === 'occupant';
+    const ending = change.op === 'end' && change.at.type === 'occupant';
+    if (!adding && !ending) return false;
     const self = await this.decide(ctx, { action: 'accommodation-self' });
     if (!self.permit) return false;
     const system = this.systemContext(`accommodation: whether ${ctx.username} owns the unit of ${username}'s occupancy`);
+    if (change.op === 'add') return (await this.owners(system, change.link.parcel)).some(o => o.username === ctx.username);
     const target = (await this.users(system)).find(u => u.username === username);
     const entry = target ? readEntries(target).entries.find(e => e.type === 'occupant' && e.index === change.at.index) : undefined;
     if (!entry?.link || JSON.stringify(entry.raw) !== change.at.expected) return false;

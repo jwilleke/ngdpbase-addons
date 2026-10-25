@@ -234,3 +234,94 @@ describe('ResidencyManager.updateOccupantDetails (#37)', () => {
     expect(unit.occupants[0]).not.toHaveProperty('details');
   });
 });
+
+describe('ResidencyManager.addOccupant (#37)', () => {
+  function withAccounts(options: { inviteFails?: boolean; createFails?: boolean } = {}) {
+    let users = structuredClone([...USERS, { username: 'friend', displayName: 'A Friend', email: 'friend@example.org' }]) as typeof USERS;
+    const order: string[] = [];
+    const audits: Array<Record<string, unknown>> = [];
+    const made: Array<[unknown, unknown]> = [];
+    const notices: string[] = [];
+    const byId = new Map(SAMPLE_ACCOMMODATIONS.map(u => [u.id, u]));
+    const decide = async (c: ActorContext, { action }: { action: string }) =>
+      ({ permit: action === 'accommodation-self' && (c as { username?: string }).username !== 'visitor', applicable: true, reason: 'test' });
+    const m = new ResidencyManager({
+      users: async () => structuredClone(users),
+      accommodation: (id) => byId.get(id),
+      today: () => TEST_TODAY,
+      decide,
+      systemContext: (reason) => ({ username: 'system', roles: [], isAuthenticated: true, reason }) as unknown as ActorContext,
+      changes: {
+        host, decide,
+        recordAudit: async (r) => { order.push(`audit:${r.action}:${r.result ?? 'success'}`); audits.push(r as never); },
+        updateUser: async (username, update) => {
+          const fields = await update(structuredClone(users.find(u => u.username === username)!) as Record<string, unknown>);
+          if (fields) { order.push('write'); users = users.map(u => (u.username === username ? { ...u, ...fields } : u)); }
+        },
+        createUser: async (sys, user) => {
+          order.push('create'); made.push([sys, user]);
+          if (options.createFails) throw new Error('username taken');
+          users = [...users, { username: user.username, displayName: user.displayName, email: user.email }];
+          return { username: user.username };
+        },
+        inviteUser: async () => { order.push('invite'); return options.inviteFails ? { outcome: 'email-unavailable', reason: 'email is off' } : { outcome: 'sent' }; },
+        notify: async (_t, message) => { order.push('notice'); notices.push(message); }
+      }
+    });
+    const occupiesOf = (u: string) => (users.find(x => x.username === u) as { occupies?: unknown[] } | undefined)?.occupies;
+    return { m, order, audits, made, notices, occupiesOf };
+  }
+
+  test('someone with an account, found by email: recorded as the owner, then the entry added, the board told', async () => {
+    const t = withAccounts();
+    expect(await t.m.addOccupant(as('pat.example'), '66-00001.000', { email: 'Friend@Example.org', name: 'A Friend', from: '2026-10-20' }))
+      .toEqual({ username: 'friend', created: false });
+    // the owner's own record first, then changeLink's record of the entry, the write, the notice; no account made
+    expect(t.order).toEqual(['audit:occupant-add:success', 'audit:occupant-add:success', 'write', 'notice']);
+    expect(t.audits.map(r => r.eventType)).toEqual(['accommodation-occupant-add', 'accommodation-manage']);
+    expect(t.occupiesOf('friend')).toEqual([{ roleName: 'occupant', accommodation: '66-00001.000', startDate: '2026-10-20', endDate: 'current' }]);
+    expect(t.audits[0]).toMatchObject({ user: 'pat.example', resource: '66-00001.000', metadata: { occupant: 'friend', newAccount: false } });
+    expect(t.notices).toEqual(['An owner of unit 66-00001.000 added an occupant.']);
+  });
+
+  test('someone with no account: made with no password and invited, as the system naming the owner and unit', async () => {
+    const t = withAccounts();
+    expect(await t.m.addOccupant(as('pat.example'), '66-00001.000', { email: 'new@example.org', name: 'New Person', username: 'new.person', from: '2026-10-20' }))
+      .toEqual({ username: 'new.person', created: true, invitation: { outcome: 'sent' } });
+    expect(t.order.slice(0, 3)).toEqual(['audit:occupant-add:success', 'create', 'invite']);
+    const [sys, user] = t.made[0] as [{ reason: string }, Record<string, string>];
+    expect(sys.reason).toBe('accommodation: pat.example, an owner of unit 66-00001.000, adds an occupant');
+    expect(user).toEqual({ username: 'new.person', email: 'new@example.org', displayName: 'New Person' });
+    expect(t.occupiesOf('new.person')).toHaveLength(1);
+    expect(t.notices).toEqual(['An owner of unit 66-00001.000 added an occupant with a new account.']);
+  });
+
+  test('an invitation that could not be sent is reported; the occupant is still added', async () => {
+    const t = withAccounts({ inviteFails: true });
+    expect(await t.m.addOccupant(as('pat.example'), '66-00001.000', { email: 'new@example.org', name: 'N', username: 'new.person', from: '2026-10-20' }))
+      .toMatchObject({ created: true, invitation: { outcome: 'email-unavailable', reason: 'email is off' } });
+    expect(t.occupiesOf('new.person')).toHaveLength(1);
+  });
+
+  test.each([
+    ['lee.renter', { email: 'friend@example.org', name: 'F', from: '2026-10-20' }, 'you are not a current owner'],
+    ['pat.example', { email: 'not-an-email', name: 'F', from: '2026-10-20' }, 'needs an email address'],
+    ['pat.example', { email: 'new@example.org', name: 'N', from: '2026-10-20' }, 'give a username for a new one'],
+    ['pat.example', { email: 'friend@example.org', name: 'F', from: '2026-13-40' }, 'must be a date'],
+    ['pat.example', { email: 'friend@example.org', name: 'F', from: '2026-10-20', to: '2026-01-01' }, 'before it starts']
+  ])('refuses %s adding %o, writing nothing', async (who, person, message) => {
+    const t = withAccounts();
+    await expect(t.m.addOccupant(as(who), '66-00001.000', person)).rejects.toThrow(message);
+    expect(t.order).toEqual([]);
+  });
+
+  test('an account that cannot be made is recorded as a failure, and no entry is added', async () => {
+    const t = withAccounts({ createFails: true });
+    await expect(t.m.addOccupant(as('pat.example'), '66-00001.000', { email: 'new@example.org', name: 'N', username: 'new.person', from: '2026-10-20' })).rejects.toThrow('username taken');
+    expect(t.order).toEqual(['audit:occupant-add:success', 'create', 'audit:occupant-add:failure']);
+  });
+
+  test('refused without accommodation-self', async () => {
+    await expect(withAccounts().m.addOccupant(as('visitor'), '66-00001.000', { email: 'a@example.org', name: 'A', from: '2026-10-20' })).rejects.toBeInstanceOf(AccommodationRefusedError);
+  });
+});

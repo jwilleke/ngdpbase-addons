@@ -58,6 +58,10 @@ interface BackgroundJobManagerLike {
 interface UserManagerLike {
   searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<UserRecord[]>;
   updateUser(username: string, updates: (current: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>, ctx: ActorContext): Promise<unknown>;
+  createUser(user: { username: string; email: string; displayName: string }, ctx: ActorContext): Promise<{ username: string }>;
+}
+interface AuthManagerLike {
+  inviteUser(ctx: ActorContext, username: string): Promise<{ outcome: string; reason?: string }>;
 }
 interface IdentityManagerLike {
   getByUserIdentifier(ctx: ActorContext, username: string): Promise<{ '@id': string; contactPoint?: unknown[] } | null>;
@@ -151,6 +155,12 @@ const AccommodationAddon = {
       changes: {
         decide, recordAudit, host,
         updateUser: (username, update, ctx) => userManager().updateUser(username, update, ctx),
+        // An owner's new occupant with no account (#37): made with no password and invited, as the system.
+        createUser: (systemCtx, user) => userManager().createUser(user, systemCtx),
+        inviteUser: async (systemCtx, username) => {
+          const auth = engine.getManager<AuthManagerLike>('AuthManager');
+          return auth ? auth.inviteUser(systemCtx, username) : { outcome: 'not-sent', reason: 'AuthManager is not available' };
+        },
         // An owner's billing address (#38): written as the system, after the owner's own decision and record.
         writeBilling: (systemCtx, id, billing) => accommodationManager.update(systemCtx, id, current => ({ ...current, billing })),
         notify: async (title, message) => {

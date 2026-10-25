@@ -9,6 +9,8 @@
     <div class="alert alert-success" data-testid="flash-billing-saved">Billing address saved. The board has been told.</div>
   <% } else if (flash === 'occupant-ended') { %>
     <div class="alert alert-success" data-testid="flash-occupant-ended">Saved: the occupant's last date is set. The board has been told.</div>
+  <% } else if (flash === 'occupant-added') { %>
+    <div class="alert alert-success" data-testid="flash-occupant-added">Saved: <%= reason %>. The board has been told.</div>
   <% } else if (flash === 'occupant-details') { %>
     <div class="alert alert-success" data-testid="flash-occupant-details">Saved: the occupant's details are changed. The board has been told.</div>
   <% } else if (flash === 'refused') { %>
@@ -71,6 +73,20 @@
               </li>
             <% }) %>
           </ul>
+        <% } %>
+        <% if (u.as.indexOf('owner') !== -1) { %>
+          <details class="mb-2">
+            <summary class="small">Add an occupant</summary>
+            <form method="POST" action="/addons/accommodation/mine/<%= encodeURIComponent(u.id) %>/occupant-add" class="row g-1 mt-1">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <div class="col-md-3"><input type="text" name="name" class="form-control form-control-sm" placeholder="Name" required aria-label="Name"></div>
+              <div class="col-md-3"><input type="email" name="email" class="form-control form-control-sm" placeholder="Email" required aria-label="Email"></div>
+              <div class="col-md-2"><input type="date" name="from" class="form-control form-control-sm" required aria-label="Moved in on"></div>
+              <div class="col-md-2"><input type="text" name="username" class="form-control form-control-sm" placeholder="Username, if new" aria-label="Username for a new account"></div>
+              <div class="col-md-2"><button type="submit" class="btn btn-sm btn-primary">Add</button></div>
+            </form>
+            <p class="small text-muted mb-0">If they have no account here, give a username: an account is made and they are emailed an invitation to set it up. It applies at once, and the board is told.</p>
+          </details>
         <% } %>
         <% if (u.billing) { %>
           <p class="mb-1 mt-2"><strong>Billing addresses:</strong></p>

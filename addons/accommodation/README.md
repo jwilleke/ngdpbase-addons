@@ -135,8 +135,19 @@ sees none, and is pointed at the Occupancy information form.
   records `accommodation-occupant-update` as the owner first (on-failure `refuse`; names, never
   values). Then core's `IdentityManager` writes the occupant's identity record under the system
   context with a reason naming the owner, unit and occupant, and the board is told. Those kinds are
-  replaced as given (a blank box clears one), and every other kind on the record stays. Adding an
-  occupant comes later.
+  replaced as given (a blank box clears one), and every other kind on the record stays.
+- __Adding an occupant__ (#37; operator, 2026-10-25: only an owner with an account adds occupants, with
+  no approval): the owner gives a name, email and move-in date. The account is found by email; with
+  none, the owner gives a username. `ResidencyManager.addOccupant` decides with the owner's context
+  (`accommodation-self`, a current owner, an occupies entry on that unit only), records
+  `accommodation-occupant-add` as the owner first, and for someone new makes the account with no
+  password and invites them under the system context, with a reason naming the owner and unit. Then
+  it adds the entry through `changeLink`, which allows a current owner to add or end occupies entries
+  on their own unit, and the board is told. An invitation that could not be sent is shown to the
+  owner. If a later step fails, a new account stays, and adding again finds it.
+- Adding or removing an owner needs approval, through core's coming review door
+  ([#40](https://github.com/jwilleke/ngdpbase-addons/issues/40)). A person's own phones and emergency
+  contact are theirs to change on `/profile` (core).
 - The mapping from the form's answers to identity-record fields (`address`, and `contactPoint` entries
   typed by `contactType`) lives in `managers/contactDetails.ts`. association's approve uses it through
   `ResidencyManager.contactDetails`, so it has one home. accommodation needs ngdpbase 5.30.0
