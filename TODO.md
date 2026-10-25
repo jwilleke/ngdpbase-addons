@@ -36,7 +36,6 @@ last_updated: "2026-10-24"
 
 - [#40](https://github.com/jwilleke/ngdpbase-addons/issues/40) — [FEATURE] accommodation: a signed-in owner adds or removes an owner, approved before it applies
 - [#35](https://github.com/jwilleke/ngdpbase-addons/issues/35) — [FEATURE] association: a signed-in owner or occupant's own-unit submission applies directly (#17d)
-- [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
 - [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) — [FEATURE] accommodation: billing parties, charges and late-charge rules
 - [#17](https://github.com/jwilleke/ngdpbase-addons/issues/17) — [FEATURE] association: Occupancy information form (ORC 5311.09)
 - [#16](https://github.com/jwilleke/ngdpbase-addons/issues/16) — [FEATURE] accommodation: self-service: see your own accommodation, update your own details
@@ -54,7 +53,7 @@ last_updated: "2026-10-24"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
 
 ## ⏸ Deferred
 
