@@ -34,6 +34,8 @@ last_updated: "2026-10-24"
 
 ## 🟠 P1
 
+- [#39](https://github.com/jwilleke/ngdpbase-addons/issues/39) — [FEATURE] accommodation: AccommodationManager writes one at a time per accommodation (host.keyedSerial)
+- [#37](https://github.com/jwilleke/ngdpbase-addons/issues/37) — [FEATURE] accommodation: an owner edits, adds and removes their unit's occupants (#16b)
 - [#35](https://github.com/jwilleke/ngdpbase-addons/issues/35) — [FEATURE] association: a signed-in owner or occupant's own-unit submission applies directly (#17d)
 - [#34](https://github.com/jwilleke/ngdpbase-addons/issues/34) — [FEATURE] association: approving a submission for someone new creates their account (#17c)
 - [#26](https://github.com/jwilleke/ngdpbase-addons/issues/26) — [FEATURE] retire the condo add-on
@@ -54,7 +56,8 @@ last_updated: "2026-10-24"
 <!-- Issues labeled `in-review` — shipped and pushed, awaiting the operator's decision to close. -->
 <!-- This band outranks an issue's priority, so finished work surfaces as "ready for your call". -->
 
-*None.*
+- [#38](https://github.com/jwilleke/ngdpbase-addons/issues/38) — [FEATURE] accommodation: an owner sets the unit's billing address (#16c)
+- [#36](https://github.com/jwilleke/ngdpbase-addons/issues/36) — [FEATURE] accommodation: a resident's own page, their unit, its owners and occupants (#16a)
 
 ## ⏸ Deferred
 
