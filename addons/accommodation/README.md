@@ -27,6 +27,12 @@ read and written through the provider named by `ngdpbase.addons.accommodation.pr
 terms: `accommodationCategory`, `floorSize`, `address` and `containedInPlace`. Every other field it
 has is kept as given.
 
+An accommodation may also keep the county's record of it, `countyRecord`
+([#41](https://github.com/jwilleke/ngdpbase-addons/issues/41)): the owner the county names, its
+attention line if any, the mailing address it uses (schema.org PostalAddress), the date of the newest
+transfer, the source and the date it was read. It sits beside the add-on's own owner entries and never
+replaces them. The owners and occupants page for an accommodation shows it.
+
 ngdpbase backs up and restores the data folder itself (ngdpbase#1985): every site backup holds it as
 `<stem>.accommodation.tar`, and a whole-site restore puts it back before the add-on starts. The add-on
 has no backup code of its own.
@@ -74,7 +80,9 @@ Open an accommodation to change its entries, which needs `accommodation-manage`:
   an owner's share. For example "Pat Example owns 66-00001.000 from 2015-06-01".
 - __End__ a current entry on its last day: "Lee Renter moved out 2026-09-30".
 - __Correct__ an entry, a malformed one too: that is how one `linkProblems` names is fixed. Fields the
-  page does not show (such as `acquiredFrom`) are kept.
+  page does not show (such as `acquiredFrom`) are kept. Changing its type moves it between
+  `occupies` and `ownership` in one write, recorded with `movedFrom`: an occupant who turns out to be
+  an owner. An owner needs a share; fields only the old list kept are not carried over.
 - __Remove__ an entry entered by mistake. An entry that ended is ended, not removed: it is the history.
 
 There is no sale step: a change of ownership is several edits (end the old owner's entry, add the new

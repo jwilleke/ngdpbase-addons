@@ -630,7 +630,8 @@ export default class ResidencyManager {
    * since the page showed it (LinkChangeRefusedError, naming why). Recorded as
    * `accommodation-manage` before it is written, naming the fields changed, never their
    * values; a write that then fails is recorded as a failure and thrown. Then the roles job
-   * is started as the caller (followRoles).
+   * is started as the caller (followRoles). A correction with a different type moves the entry
+   * between `occupies` and `ownership` in the same write: an occupant who turns out to be an owner.
    *
    * Without `accommodation-manage`, a current owner of a unit may end an occupant's entry on that
    * unit (#37; settled with ngdpbase core, 2026-10-25): `accommodation-self`, the caller a current
@@ -647,14 +648,16 @@ export default class ResidencyManager {
     if (!(await this.users(ctx)).some(u => u.username === username)) throw new LinkChangeRefusedError(`no account named ${username}`);
     const type = change.op === 'add' || change.op === 'correct' ? change.link.type : change.at.type;
     const field = fieldOf(type);
+    // A correction that changes the type moves the entry to the other list, in the same write.
+    const fromField = change.op === 'correct' && change.at.type !== change.link.type ? fieldOf(change.at.type) : field;
     const { metadata: whoMetadata, ...who } = changes.host.actorOf(ctx);
-    let planned: { next: unknown[]; parcel: string; fields: string[] } | null = null;
+    let planned: { next: unknown[]; parcel: string; fields: string[]; left?: unknown[] } | null = null;
     const record = (result: 'success' | 'failure', reason?: string): AccommodationAuditRecord => ({
       eventType: changes.host.addonAuditEventName('accommodation-manage'),
       ...who,
       result,
       action: `${type}-${change.op}`, severity: 'medium', resource: planned?.parcel ?? '', resourceType: 'accommodation',
-      metadata: { ...whoMetadata, username, owner: username, field, fields: planned?.fields ?? [], ...(reason ? { reason } : {}) }
+      metadata: { ...whoMetadata, username, owner: username, field, ...(fromField !== field ? { movedFrom: fromField } : {}), fields: planned?.fields ?? [], ...(reason ? { reason } : {}) }
     });
 
     // One step from read to write (ngdpbase#2025, 5.28.0): the list is read from the account as it
@@ -663,14 +666,23 @@ export default class ResidencyManager {
     let recorded = false;
     try {
       await changes.updateUser(username, async (current) => {
-        const value = current[field];
-        if (value !== undefined && !Array.isArray(value)) throw new LinkChangeRefusedError(`${username}: ${field} is not a list; it has to be fixed on the account first`);
-        planned = this.plan(username, field, [...(value ?? [])], change);
+        const listOf = (f: 'ownership' | 'occupies'): unknown[] => {
+          const value = current[f];
+          if (value !== undefined && !Array.isArray(value)) throw new LinkChangeRefusedError(`${username}: ${f} is not a list; it has to be fixed on the account first`);
+          return [...(value ?? [])];
+        };
+        if (fromField === field) {
+          planned = this.plan(username, field, listOf(field), change);
+        } else if (change.op === 'correct') {
+          const left = this.plan(username, fromField, listOf(fromField), { op: 'remove', at: change.at });
+          const added = this.plan(username, field, listOf(field), { op: 'add', link: change.link });
+          planned = left && added ? { ...added, left: left.next } : null;
+        }
         if (!planned) return undefined;
         // on-failure refuse: no record, no change.
         await changes.recordAudit(record('success'));
         recorded = true;
-        return { [field]: planned.next };
+        return { [field]: planned.next, ...(planned.left ? { [fromField]: planned.left } : {}) };
       }, ctx);
     } catch (err) {
       if (recorded) await changes.recordAudit(record('failure', err instanceof Error ? err.message : String(err))).catch(() => undefined);

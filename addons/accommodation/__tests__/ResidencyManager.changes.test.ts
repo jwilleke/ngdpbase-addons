@@ -103,6 +103,19 @@ describe('ResidencyManager.changeLink (#28)', () => {
     expect(ownershipOf('broken.links')).toEqual([{ typeOfGood: '66-00001.000', ownedFrom: '2020-01-01', ownedThrough: '2021-12-31', share: 100 }]);
   });
 
+  test('a correction with a new type moves the entry to the other list, in one write', async () => {
+    const m = open();
+    await m.changeLink(treasurer, 'lee.renter', { op: 'correct', at: at('lee.renter', 'occupant', 0), link: { parcel: '66-00001.000', type: 'owner', from: '2023-02-01', to: 'current', share: 50 } });
+    expect(occupiesOf('lee.renter')).toEqual([]);
+    expect(ownershipOf('lee.renter')).toEqual([{ typeOfGood: '66-00001.000', ownedFrom: '2023-02-01', ownedThrough: 'current', share: 50 }]);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ action: 'owner-correct', metadata: { field: 'ownership', movedFrom: 'occupies' } });
+
+    await expect(m.changeLink(treasurer, 'pat.example', { op: 'correct', at: at('pat.example', 'owner', 0), link: { parcel: '66-00001.000', type: 'occupant', from: '2015-06-01', to: 'current' } }))
+      .resolves.toEqual({ changed: true });
+    expect(ownershipOf('pat.example')).toEqual([]);
+  });
+
   test('a correction that changes nothing writes and records nothing', async () => {
     const m = open();
     const link = { parcel: '66-00001.000', type: 'owner' as const, from: '2015-06-01', to: 'current', share: 50 };

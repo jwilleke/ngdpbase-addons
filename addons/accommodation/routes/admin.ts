@@ -22,6 +22,7 @@ import type ResidencyManager from '../managers/ResidencyManager.js';
 import type { LinkChange, LinkChangeResult } from '../managers/ResidencyManager.js';
 import type { LinkType, UnitLink } from '../managers/unitLinks.js';
 import { unitAddress } from '../managers/billing.js';
+import { countyRecordOf } from '../managers/countyRecord.js';
 import { OCCUPANT_EDITABLE_FIELDS } from '../managers/contactDetails.js';
 
 interface Engine {
@@ -30,15 +31,24 @@ interface Engine {
   templateData?: (req: Request) => Promise<Record<string, unknown>>;
 }
 
+/** How a person knows a unit: its street address, then the parcel ("13 Fairway Dr (66-09960.017)"). */
+function unitLabel(accommodations: AccommodationManager, id: string): string {
+  const street = unitAddress(accommodations.get(id))?.streetAddress;
+  return street ? `${street} (${id})` : id;
+}
+
 /** A form value as a trimmed string; anything else is empty. */
 function text(body: Record<string, unknown>, name: string): string {
   const value = body[name];
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** The link a form describes. Nothing is guessed: the manager refuses what does not read as a link. */
+/**
+ * The link a form describes. Nothing is guessed: the manager refuses what does not read as a link.
+ * A correction may name a new type (`as`); the entry's own `type` says where it is now.
+ */
 function linkFrom(body: Record<string, unknown>, parcel: string): UnitLink {
-  const type = text(body, 'type') as LinkType;
+  const type = (text(body, 'as') || text(body, 'type')) as LinkType;
   const share = text(body, 'share');
   return {
     parcel, type, from: text(body, 'from'), to: text(body, 'to'),
@@ -86,7 +96,14 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
         res.render('accommodation-residents', {
           ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
-          units: units.map(u => ({ id: u.id, ...(roster.get(u.id) ?? { owners: [], occupants: [] }) })),
+          // by street, then house number, as people find them
+          units: units
+            .map(u => ({ id: u.id, label: unitLabel(accommodations, u.id), address: unitAddress(u), ...(roster.get(u.id) ?? { owners: [], occupants: [] }) }))
+            .sort((a, b) => {
+              const [na, ...sa] = (a.address?.streetAddress ?? a.id).split(' ');
+              const [nb, ...sb] = (b.address?.streetAddress ?? b.id).split(' ');
+              return sa.join(' ').localeCompare(sb.join(' ')) || (Number(na) || 0) - (Number(nb) || 0) || a.id.localeCompare(b.id);
+            }),
           problems: await residency.linkProblems(actor)
         });
       } catch (err) {
@@ -110,6 +127,8 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           parcel,
+          label: unitLabel(accommodations, parcel),
+          county: countyRecordOf(accommodations.get(parcel)),
           entries,
           shareProblems,
           people: await residency.people(actor),

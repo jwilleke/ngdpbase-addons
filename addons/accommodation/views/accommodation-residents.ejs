@@ -22,7 +22,7 @@
         <tbody>
           <% units.forEach(function (unit) { %>
             <tr>
-              <td><a href="/addons/accommodation/residents/<%= encodeURIComponent(unit.id) %>"><%= unit.id %></a></td>
+              <td><a href="/addons/accommodation/residents/<%= encodeURIComponent(unit.id) %>"><%= unit.label %></a></td>
               <td><% if (unit.owners.length > 0) { %><%= unit.owners.map(function (o) { return o.name; }).join(', ') %><% } else { %><span class="text-danger">No current owner</span><% } %></td>
               <td><% if (unit.occupants.length > 0) { %><%= unit.occupants.map(function (o) { return o.name; }).join(', ') %><% } else { %><span class="text-muted">None</span><% } %></td>
             </tr>
