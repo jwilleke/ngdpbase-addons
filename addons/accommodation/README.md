@@ -76,21 +76,22 @@ every accommodation with its current owners and occupants, and the entries that 
 ([#28](https://github.com/jwilleke/ngdpbase-addons/issues/28)). Seeing it needs `accommodation-read`.
 Open an accommodation to change its entries, which needs `accommodation-manage`:
 
-- __Add__ an entry: the person (a username), owner or occupant, from, through (`current` or a date), and
-  an owner's share. For example "Pat Example owns 66-00001.000 from 2015-06-01". From starts as the
-  county's newest sale date.
-- __Add someone with no account yet__ in the same save (operator, 2026-10-25):
-  `ResidencyManager.addNewPerson` needs `accommodation-manage` and `user-create`. It checks everything
-  first (a name, an email if given and not already on an account, a free username, made from the name
-  when none is given, and the entry), then makes the account as the admin with no password, then adds
-  the entry through changeLink. An invitation goes only when the box is ticked and there is an email. A
-  refused add comes back with what was typed, kept in the page and never in the URL.
-- __End__ a current entry on its last day: "Lee Renter moved out 2026-09-30".
-- __Correct__ an entry, a malformed one too: that is how one `linkProblems` names is fixed. Fields the
-  page does not show (such as `acquiredFrom`) are kept. Changing its type moves it between
+- __Add a person__: one Name box, owner or occupant, from, and an owner's share. For example "Pat
+  Example owns 66-00001.000 from 2015-06-01". From starts as the county's newest sale date. A name
+  picked from the list (or a username) is that account; any other name is someone new, and their
+  account is made in the same save (operator, 2026-10-25): `ResidencyManager.addNewPerson` needs
+  `accommodation-manage` and `user-create`, checks everything first (a name, an email if given and not
+  already on an account, a username made from the name and free to use, and the entry), makes the
+  account as the admin with no password, then adds the entry through changeLink. An invitation goes
+  only when the box is ticked and there is an email. A refused add comes back with what was typed,
+  kept in the page and never in the URL.
+- __Edit__ an entry: as, from, through and share, then Save. Ending one is setting Through to the
+  last day: "Lee Renter moved out 2026-09-30". A malformed entry is fixed the same way. Fields the
+  page does not show (such as `acquiredFrom`) are kept. Changing As moves the entry between
   `occupies` and `ownership` in one write, recorded with `movedFrom`: an occupant who turns out to be
   an owner. An owner needs a share; fields only the old list kept are not carried over.
-- __Remove__ an entry entered by mistake. An entry that ended is ended, not removed: it is the history.
+- __Remove__ (in Edit) an entry entered by mistake. An entry that ended is ended, not removed: it is
+  the history.
 
 There is no sale step: a change of ownership is several edits (end the old owner's entry, add the new
 owner's). Each is saved on its own, so in between the accommodation's owners' shares may not add up to

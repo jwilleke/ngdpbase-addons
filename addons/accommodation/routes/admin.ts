@@ -3,7 +3,7 @@
  *
  *   GET  /residents                  every accommodation with its current owners and occupants
  *   GET  /residents/:parcel          one accommodation: every owner and occupant entry, past and present
- *   POST /residents/:parcel/change   add, end, correct or remove one entry (#28)
+ *   POST /residents/:parcel/change   add a person (making their account when they have none), correct or remove one entry (#28)
  *   GET  /mine                       a signed-in resident's own units (#36), under accommodation-self
  *   POST /residents/:parcel/billing the treasurer sets where the unit's invoices go (ngdpbase#2042)
  *   POST /mine/:parcel/billing       an owner sets where their unit's invoices go, as the treasurer can (ngdpbase#2042)
@@ -20,7 +20,7 @@ import type { Request, Response, Router } from 'express';
 import type { AddonHost } from '@jwilleke/ngdpbase-types';
 import type AccommodationManager from '../managers/AccommodationManager.js';
 import type ResidencyManager from '../managers/ResidencyManager.js';
-import type { LinkChange, LinkChangeResult } from '../managers/ResidencyManager.js';
+import { LinkChangeRefusedError, type LinkChange, type LinkChangeResult } from '../managers/ResidencyManager.js';
 import type { LinkType, UnitLink } from '../managers/unitLinks.js';
 import { billingForForm, unitAddress } from '../managers/billing.js';
 import { countyRecordOf, suggestedBilling } from '../managers/countyRecord.js';
@@ -182,21 +182,23 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
         await ctx.requirePermission('accommodation-manage');
         const change = changeFrom(body, parcel);
         if (typeof change === 'string') { res.redirect(`${back}?flash=refused&reason=${encodeURIComponent(change)}`); return; }
-        // An add for someone with no account yet: the account and the entry in one save.
-        if (change.op === 'add' && text(body, 'username') === '' && text(body, 'newName') !== '') {
-          const made = await managers().residency.addNewPerson(ctx.getActor(), change.link, {
-            name: text(body, 'newName'), email: text(body, 'newEmail'), username: text(body, 'newUsername'), invite: text(body, 'invite') === 'yes'
-          });
-          res.redirect(`${back}?flash=${made.invitation ? 'saved-invited' : 'saved-new'}`);
-          return;
-        }
-        // A name typed where an account is chosen: offer it as someone new, with everything kept.
-        if (change.op === 'add' && !(await managers().residency.people(ctx.getActor())).some(p => p.username === text(body, 'username'))) {
-          const draft = Object.fromEntries(['type', 'from', 'to', 'share', 'newEmail', 'invite'].map(k => [k, text(body, k)]));
-          await renderUnit(req, res, ctx, parcel, {
-            flash: 'new-person', reason: text(body, 'username'),
-            draft: { ...draft, username: '', newName: text(body, 'newName') || text(body, 'username'), newUsername: text(body, 'newUsername') }
-          });
+        // Add a person: the one Name box is an account picked from the list (its name, or its
+        // username), else someone new, whose account is made in the same save.
+        if (change.op === 'add') {
+          const { residency } = managers();
+          const person = text(body, 'person');
+          const people = await residency.people(ctx.getActor());
+          const named = people.filter(p => p.name.toLowerCase() === person.toLowerCase());
+          const username = people.find(p => p.username === person)?.username ?? (named.length === 1 ? named[0].username : undefined);
+          if (named.length > 1 && !username) {
+            throw new LinkChangeRefusedError(`more than one account is named ${person}; type the username the list shows beside the name`);
+          }
+          if (username) {
+            res.redirect(afterChange(parcel, await residency.changeLink(ctx.getActor(), username, change)));
+          } else {
+            const made = await residency.addNewPerson(ctx.getActor(), change.link, { name: person, email: text(body, 'email'), invite: text(body, 'invite') === 'yes' });
+            res.redirect(`${back}?flash=${made.invitation ? 'saved-invited' : 'saved-new'}`);
+          }
           return;
         }
         const result = await managers().residency.changeLink(ctx.getActor(), text(body, 'username'), change);
@@ -210,7 +212,7 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           if ((err as Error).name === 'LinkChangeRefusedError') {
             if (text(body, 'op') === 'add') {
               // Shown again with what was typed: nothing to type twice, and nothing personal in the URL.
-              const draft = Object.fromEntries(['username', 'type', 'from', 'to', 'share', 'newName', 'newEmail', 'newUsername', 'invite'].map(k => [k, text(body, k)]));
+              const draft = Object.fromEntries(['person', 'type', 'from', 'share', 'email', 'invite'].map(k => [k, text(body, k)]));
               await renderUnit(req, res, ctx, parcel, { flash: 'refused', reason: (err as Error).message, draft });
               return;
             }

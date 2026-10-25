@@ -7,8 +7,6 @@
 
   <% if (flash === 'saved') { %>
     <div class="alert alert-success" data-testid="flash-saved">Saved. The owner and occupant roles follow it when the roles job has run (Admin → Scheduled Jobs).</div>
-  <% } else if (flash === 'new-person') { %>
-    <div class="alert alert-warning" data-testid="flash-new-person">Nobody has an account named "<%= reason %>". If this is someone new, check their details under "Someone with no account yet" below and click Add: the account and the entry are made together. Otherwise choose the person from the list.</div>
   <% } else if (flash === 'saved-new') { %>
     <div class="alert alert-success" data-testid="flash-saved-new">Saved, with a new account (no password, no invitation sent). The roles follow when the roles job has run.</div>
   <% } else if (flash === 'saved-invited') { %>
@@ -46,15 +44,15 @@
     <%- include('accommodation-billing-form', { action: '/addons/accommodation/residents/' + encodeURIComponent(parcel) + '/billing', billing: billing, csrfToken: csrfToken }) %>
   </div>
 
-  <h4>Entries</h4>
+  <h4>Owners and occupants</h4>
   <% if (entries.length === 0) { %>
     <p class="text-muted">Nobody owns or lives in this accommodation yet.</p>
   <% } else { %>
     <div class="table-responsive">
       <table class="table table-sm align-middle">
-        <thead><tr><th>Person</th><th>As</th><th>From</th><th>Through</th><th>Share</th><th>Change</th></tr></thead>
+        <thead><tr><th>Person</th><th>As</th><th>From</th><th>Through</th><th>Share</th><th></th></tr></thead>
         <tbody>
-          <% entries.forEach(function (e) { %>
+          <% entries.forEach(function (e, n) { %>
             <tr>
               <td><%= e.name %> <span class="text-muted small">(<%= e.username %>)</span></td>
               <td><%= e.type %></td>
@@ -66,47 +64,39 @@
                 <td colspan="3" class="text-danger"><%= e.problem %></td>
               <% } %>
               <td>
-                <% if (e.link && e.link.to === 'current') { %>
-                  <form method="POST" action="<%= action %>" class="d-flex gap-1 mb-1">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="op" value="end">
-                    <input type="hidden" name="username" value="<%= e.username %>">
-                    <input type="hidden" name="type" value="<%= e.type %>">
-                    <input type="hidden" name="index" value="<%= e.index %>">
-                    <input type="hidden" name="expected" value="<%= e.expected %>">
-                    <input type="date" name="on" class="form-control form-control-sm" required aria-label="Last day">
-                    <button type="submit" class="btn btn-sm btn-outline-secondary">End</button>
-                  </form>
-                <% } %>
                 <details>
-                  <summary class="small">Correct or remove</summary>
+                  <summary class="small">Edit</summary>
                   <form method="POST" action="<%= action %>" class="row g-1 mt-1">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="op" value="correct">
                     <input type="hidden" name="username" value="<%= e.username %>">
                     <input type="hidden" name="type" value="<%= e.type %>">
                     <input type="hidden" name="index" value="<%= e.index %>">
                     <input type="hidden" name="expected" value="<%= e.expected %>">
                     <div class="col-auto">
-                      <select name="as" class="form-select form-select-sm" aria-label="As">
+                      <label class="form-label small mb-0" for="as-<%= n %>">As</label>
+                      <select id="as-<%= n %>" name="as" class="form-select form-select-sm">
                         <option value="owner"<%= e.type === 'owner' ? ' selected' : '' %>>owner</option>
                         <option value="occupant"<%= e.type === 'occupant' ? ' selected' : '' %>>occupant</option>
                       </select>
                     </div>
-                    <div class="col-auto"><input type="date" name="from" class="form-control form-control-sm" value="<%= e.link ? e.link.from : '' %>" required aria-label="From"></div>
-                    <div class="col-auto"><input type="text" name="to" class="form-control form-control-sm" value="<%= e.link ? e.link.to : 'current' %>" required aria-label="Through: a date YYYY-MM-DD or current"></div>
-                    <div class="col-auto"><input type="number" name="share" class="form-control form-control-sm" min="0.01" max="100" step="any" value="<%= e.link && e.link.share !== undefined ? e.link.share : '' %>" placeholder="Share %" aria-label="Share, percent (owners)"></div>
-                    <div class="col-auto"><button type="submit" class="btn btn-sm btn-outline-primary">Correct</button></div>
+                    <div class="col-auto">
+                      <label class="form-label small mb-0" for="from-<%= n %>">From</label>
+                      <input type="date" id="from-<%= n %>" name="from" class="form-control form-control-sm" value="<%= e.link ? e.link.from : '' %>" required>
+                    </div>
+                    <div class="col-auto">
+                      <label class="form-label small mb-0" for="to-<%= n %>">Through</label>
+                      <input type="text" id="to-<%= n %>" name="to" class="form-control form-control-sm" value="<%= e.link ? e.link.to : 'current' %>" required>
+                    </div>
+                    <div class="col-auto">
+                      <label class="form-label small mb-0" for="share-<%= n %>">Share %</label>
+                      <input type="number" id="share-<%= n %>" name="share" class="form-control form-control-sm" min="0.01" max="100" step="any" value="<%= e.link && e.link.share !== undefined ? e.link.share : '' %>">
+                    </div>
+                    <div class="col-12 d-flex gap-2 mt-1">
+                      <button type="submit" name="op" value="correct" class="btn btn-sm btn-primary">Save</button>
+                      <button type="submit" name="op" value="remove" class="btn btn-sm btn-outline-danger" formnovalidate>Remove (entered by mistake)</button>
+                    </div>
                   </form>
-                  <form method="POST" action="<%= action %>" class="mt-1">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="op" value="remove">
-                    <input type="hidden" name="username" value="<%= e.username %>">
-                    <input type="hidden" name="type" value="<%= e.type %>">
-                    <input type="hidden" name="index" value="<%= e.index %>">
-                    <input type="hidden" name="expected" value="<%= e.expected %>">
-                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove (entered by mistake)</button>
-                  </form>
+                  <p class="small text-muted mb-0 mt-1">Moved out or sold: set Through to their last day and Save. Remove only an entry that should never have been there.</p>
                 </details>
               </td>
             </tr>
@@ -116,17 +106,17 @@
     </div>
   <% } %>
 
-  <h4 class="mt-4">Add an entry</h4>
+  <h4 class="mt-4">Add a person</h4>
   <% var d = draft || {}; %>
   <form method="POST" action="<%= action %>" data-testid="add-entry">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
     <input type="hidden" name="op" value="add">
     <div class="row g-2 align-items-end">
-      <div class="col-auto">
-        <label class="form-label small" for="add-username">Person with an account</label>
-        <input type="text" id="add-username" name="username" class="form-control form-control-sm" list="people" value="<%= d.username || '' %>" placeholder="Start typing a name">
+      <div class="col-md-3">
+        <label class="form-label small" for="add-person">Name</label>
+        <input type="text" id="add-person" name="person" class="form-control form-control-sm" list="people" value="<%= d.person || '' %>" placeholder="Pick from the list, or type a new name" required>
         <datalist id="people">
-          <% people.forEach(function (p) { %><option value="<%= p.username %>"><%= p.name %></option><% }) %>
+          <% people.forEach(function (p) { %><option value="<%= p.name %>"><%= p.username %></option><% }) %>
         </datalist>
       </div>
       <div class="col-auto">
@@ -141,41 +131,22 @@
         <input type="date" id="add-from" name="from" class="form-control form-control-sm" value="<%= d.from || (county ? county.lastSaleDate : '') %>" required>
       </div>
       <div class="col-auto">
-        <label class="form-label small" for="add-to">Through</label>
-        <input type="text" id="add-to" name="to" class="form-control form-control-sm" value="<%= d.to || 'current' %>" required>
-      </div>
-      <div class="col-auto">
         <label class="form-label small" for="add-share">Share % (owners)</label>
         <input type="number" id="add-share" name="share" class="form-control form-control-sm" min="0.01" max="100" step="any" value="<%= d.share || '100' %>">
       </div>
-    </div>
-    <details class="mt-2"<%= d.newName ? ' open' : '' %>>
-      <summary class="small">Someone with no account yet</summary>
-      <div class="row g-2 align-items-end mt-1">
-        <div class="col-md-3">
-          <label class="form-label small" for="add-new-name">Name</label>
-          <input type="text" id="add-new-name" name="newName" class="form-control form-control-sm" value="<%= d.newName || '' %>">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label small" for="add-new-email">Email (if known)</label>
-          <input type="email" id="add-new-email" name="newEmail" class="form-control form-control-sm" value="<%= d.newEmail || '' %>">
-        </div>
-        <div class="col-md-2">
-          <label class="form-label small" for="add-new-username">Username (optional)</label>
-          <input type="text" id="add-new-username" name="newUsername" class="form-control form-control-sm" value="<%= d.newUsername || '' %>" placeholder="made from the name">
-        </div>
-        <div class="col-md-3">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="add-invite" name="invite" value="yes"<%= d.invite === 'yes' ? ' checked' : '' %>>
-            <label class="form-check-label small" for="add-invite">Email them an invitation to set up the account</label>
-          </div>
-        </div>
+      <div class="col-md-3">
+        <label class="form-label small" for="add-email">Email (new people, if known)</label>
+        <input type="email" id="add-email" name="email" class="form-control form-control-sm" value="<%= d.email || '' %>">
       </div>
-      <p class="small text-muted mb-0 mt-1">Leave "Person with an account" empty and fill these in: an account is made with no password, and the entry is added, in one save. No invitation is sent unless you tick the box and give an email.</p>
-    </details>
+    </div>
+    <input type="hidden" name="to" value="current">
+    <div class="form-check mt-2">
+      <input class="form-check-input" type="checkbox" id="add-invite" name="invite" value="yes"<%= d.invite === 'yes' ? ' checked' : '' %>>
+      <label class="form-check-label small" for="add-invite">Email a new person an invitation to set up their account</label>
+    </div>
     <button type="submit" class="btn btn-sm btn-primary mt-2">Add</button>
   </form>
-  <p class="small text-muted mt-1">Through is a date YYYY-MM-DD, or <code>current</code>. From starts as the county's newest sale date. Share is ignored for an occupant. To make an occupant an owner, or back, change <em>As</em> under "Correct or remove" (an owner needs a share).</p>
+  <p class="small text-muted mt-1">Someone not in the list gets an account made for them (no password; no email unless you tick the box). From starts as the county's newest sale date. Joint owners: give each their share so they add up to 100%.</p>
 </div>
 
 <%- include('footer') %>
