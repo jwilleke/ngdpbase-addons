@@ -99,6 +99,36 @@ Two admins changing the same person's entries at the same moment both stand: the
 written in one step per account, through `UserManager.updateUser`'s function form (ngdpbase 5.28.0,
 [ngdpbase#2025](https://github.com/jwilleke/ngdpbase/issues/2025)).
 
+### A resident's own page
+
+__My accommodation__ (`/addons/accommodation/mine`) shows a signed-in person the units they own or
+live in today ([#36](https://github.com/jwilleke/ngdpbase-addons/issues/36)), under
+`accommodation-self`, which every user holds through `vault-owner`. A person with no current entry
+sees none, and is pointed at the Occupancy information form.
+
+- Each unit shows its address, its category and assessment (in the site's currency, through core's
+  `formatMoney`), its current owners by name, and its occupants.
+- An owner also sees the occupants' emails and the unit's billing parties. An occupant sees the
+  owners' names only.
+- No balance: bills, payments and balance are on the dues card the accounting add-on puts on the
+  person's profile, which the page links to (ngdp-accounting-addons D-044).
+- __Billing address__ ([#38](https://github.com/jwilleke/ngdpbase-addons/issues/38)): an owner changes
+  the address of a billing party they are on. It applies at once (operator, 2026-10-22). A unit that
+  keeps no parties has one, all its current owners, and setting its address keeps that party.
+  `ResidencyManager.setBillingAddress` decides with the owner's context (`accommodation-self`, a
+  current owner, on that party). It records `accommodation-billing-update` as the owner first
+  (on-failure `refuse`; the field names, never the address), has `AccommodationManager` write it under
+  the system context with a reason naming the owner, then tells the holders of
+  `accommodation-notices` (admins on day one; a site grants its board).
+- Known gap: an admin's edit and an owner's billing change to the same accommodation at the same
+  moment can lose one, until `AccommodationManager` writes one at a time per accommodation
+  ([#39](https://github.com/jwilleke/ngdpbase-addons/issues/39)).
+- __An occupant moved out__ ([#37](https://github.com/jwilleke/ngdpbase-addons/issues/37)): an owner sets
+  the last date of a current occupant's entry on their own unit. It goes through `changeLink`, which,
+  without `accommodation-manage`, lets a current owner of the entry's unit end an occupies entry and
+  nothing else. It is recorded the same way, and the holders of `accommodation-notices` are told. An
+  owner editing an occupant's phones and emergency contact, and adding an occupant, come later.
+
 ## Owner and occupant roles
 
 The add-on declares two ngdpbase roles, `owner` and `occupant`, and keeps them in step with the dated

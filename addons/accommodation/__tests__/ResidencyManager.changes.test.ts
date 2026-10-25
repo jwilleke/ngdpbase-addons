@@ -230,4 +230,47 @@ describe('ResidencyManager.changeLink (#28)', () => {
     await Promise.all([add('2026-01-01'), add('2026-02-01')]);
     expect((occupiesOf('admin') as Array<{ startDate: string }>).map(e => e.startDate)).toEqual(['2026-01-01', '2026-02-01']);
   });
+  describe('an owner ends an occupant on their own unit (#37)', () => {
+    function asOwner() {
+      const notices: string[] = [];
+      const byId = new Map(SAMPLE_ACCOMMODATIONS.map(u => [u.id, u]));
+      const grants: Record<string, string[]> = { ...GRANTS, 'pat.example': ['accommodation-self'], 'kim.both': ['accommodation-self'] };
+      const decide = async (c: ActorContext, { action }: { action: string }) => ({ permit: (grants[(c as { username?: string }).username ?? ''] ?? []).includes(action), applicable: true, reason: 'test' });
+      const m = new ResidencyManager({
+        users: async () => structuredClone(users), accommodation: (id) => byId.get(id), today: () => TEST_TODAY,
+        decide, systemContext: (reason) => ({ username: 'system', roles: [], isAuthenticated: true, reason }) as unknown as ActorContext,
+        changes: {
+          host, decide,
+          recordAudit: async (record) => { order.push(`audit:${record.result ?? 'success'}`); audits.push(record); },
+          updateUser: async (username, update) => {
+            const fields = await update(structuredClone(users.find(u => u.username === username)!) as Record<string, unknown>);
+            if (fields) { order.push('write'); users = users.map(u => (u.username === username ? { ...u, ...fields } : u)); }
+          },
+          notify: async (_t, message) => { order.push('notice'); notices.push(message); }
+        }
+      });
+      return { m, notices };
+    }
+
+    test('ends the occupancy, recorded as the owner, and the board is told', async () => {
+      const { m, notices } = asOwner();
+      expect(await m.changeLink(contextFor('pat.example'), 'lee.renter', { op: 'end', at: at('lee.renter', 'occupant', 0), on: '2026-10-31' })).toEqual({ changed: true });
+      expect(occupiesOf('lee.renter')).toEqual([{ roleName: 'occupant', accommodation: '66-00001.000', startDate: '2023-02-01', endDate: '2026-10-31' }]);
+      expect(order).toEqual(['audit:success', 'write', 'notice']);
+      expect(audits[0]).toMatchObject({ user: 'pat.example', action: 'occupant-end', resource: '66-00001.000' });
+      expect(notices).toEqual(["An owner of unit 66-00001.000 ended an occupant's entry."]);
+    });
+
+    test.each([
+      ['an owner entry', 'pat.example', 'sam.example', 'owner', 0, 'end'],
+      ['another unit', 'pat.example', 'kim.both', 'occupant', 0, 'end'],
+      ['a remove rather than an end', 'pat.example', 'lee.renter', 'occupant', 0, 'remove'],
+      ['an occupant who is no owner', 'lee.renter', 'lee.renter', 'occupant', 0, 'end']
+    ] as const)('refuses %s, writing nothing', async (_what, who, target, type, index, op) => {
+      const { m } = asOwner();
+      const change = op === 'end' ? { op, at: at(target, type, index), on: '2026-10-31' } : { op, at: at(target, type, index) };
+      await expect(m.changeLink(contextFor(who), target, change as never)).rejects.toBeInstanceOf(AccommodationRefusedError);
+      expect(order).toEqual([]);
+    });
+  });
 });

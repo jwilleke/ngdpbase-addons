@@ -22,7 +22,8 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 | [`accommodation-read`](#accommodation-read) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
 | [`accommodation-units-list`](#accommodation-units-list) | Built ([#32](https://github.com/jwilleke/ngdpbase-addons/issues/32)) | every visitor and every user |
 | [`accommodation-manage`](#accommodation-manage) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
-| [`accommodation-self`](#accommodation-self) | Planned ([#16](https://github.com/jwilleke/ngdpbase-addons/issues/16)) | every user, through `vault-owner` |
+| [`accommodation-notices`](#accommodation-notices) | Built ([#38](https://github.com/jwilleke/ngdpbase-addons/issues/38)) | admin |
+| [`accommodation-self`](#accommodation-self) | Seeing your own units built ([#36](https://github.com/jwilleke/ngdpbase-addons/issues/36)); changes planned ([#16](https://github.com/jwilleke/ngdpbase-addons/issues/16)) | every user, through `vault-owner` |
 | [`accommodation-review`](#accommodation-review) | Planned ([#17](https://github.com/jwilleke/ngdpbase-addons/issues/17)) | board |
 | [`accommodation-maintenance-read`](#accommodation-maintenance-read) | Proposed | board |
 | [`accommodation-board-read`](#accommodation-board-read) | Proposed | board |
@@ -66,6 +67,16 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   the change is not made. The record names the accommodation, the action (`owner-add`, `occupant-end`, …)
   and the field names changed, never their values; for an entry, also the person (`metadata.owner`).
 
+### accommodation-notices
+
+- __Lets a person:__ be told of residents' changes the board should know about: an owner's billing
+  address now, and changes to occupants later.
+- __Does not:__ let them see or change anything.
+- __Granted:__ to admins in accommodation's own policy; a site grants it to its board. When
+  `governance` exists, it can grant it to its board roles (settled with ngdpbase core, 2026-10-25).
+- __Used:__ notices go to `PolicyDecisionPoint.usersHolding('accommodation-notices')`; with nobody
+  holding it, the add-on logs only.
+
 ### accommodation-self
 
 - __Lets a person:__ see their own unit (assessment, billing, owners and occupants, and a link to the
@@ -74,6 +85,10 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   occupants, and fills in the billing address.
 - __Own unit means:__ a unit they hold a current link to, as owner or occupant. The add-on checks that link
   on every request; the permission alone opens nothing.
+- __Checked:__ by `ResidencyManager.ownUnits` with the person's context, first the permission and then
+  their own current entries. Only then are the unit's other people read, under the system context with
+  a reason naming the person, and only the fields above are returned: co-owners' and occupants' names,
+  occupants' emails and the billing parties to an owner (settled with ngdpbase core, 2026-10-25).
 - __Granted:__ to every user, through the role `vault-owner`, in the add-on's own policy. Never to site
   roles or a list of roles, never to an `authenticated` subject, and never by editing a core policy
   (operator, 2026-10-24, [ngdpbase#1539](https://github.com/jwilleke/ngdpbase/issues/1539)): it is a
@@ -90,7 +105,7 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 - __Lets a person:__ approve or refuse what waits for review: an Occupancy information form from
   someone not signed in, and every owner change.
 - __Implies:__ approving a form can create an ngdpbase account for the person it names, so the holder
-  also needs `contact-manage`, or the add-on's policy grants it alongside.
+  also needs `identity-manage`, or the add-on's policy grants it alongside.
 - __Recorded:__ each approval and refusal, by whom.
 
 ### accommodation-maintenance-read
@@ -127,8 +142,8 @@ configuration screens, as an admin (operator, 2026-10-22). The add-on's admin pa
 
 | Permission | Why |
 | --- | --- |
-| `contact-read` | The directory import ([#8](https://github.com/jwilleke/ngdpbase-addons/issues/8)) matches people against ngdpbase contacts |
-| `contact-manage` | The directory import, and approving a form, create people |
+| `identity-read` | The directory import ([#8](https://github.com/jwilleke/ngdpbase-addons/issues/8)) matches people against ngdpbase contacts |
+| `identity-manage` | The directory import, and approving a form, create people |
 | `form-submit` | Submitting the Occupancy information form; the forms add-on asks it |
 
 ## Rules

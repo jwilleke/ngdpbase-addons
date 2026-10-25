@@ -1,0 +1,85 @@
+<%- include('header', { title: 'My accommodation', currentUser }) %>
+
+<div class="container-fluid mt-4">
+  <h2 class="mb-1"><i class="fas fa-house-user me-2"></i>My accommodation</h2>
+  <p class="text-muted">The units you own or live in today.
+    Your bills, payments and balance are on <a href="/profile">your profile</a>.</p>
+
+  <% if (flash === 'billing-saved') { %>
+    <div class="alert alert-success" data-testid="flash-billing-saved">Billing address saved. The board has been told.</div>
+  <% } else if (flash === 'occupant-ended') { %>
+    <div class="alert alert-success" data-testid="flash-occupant-ended">Saved: the occupant's last date is set. The board has been told.</div>
+  <% } else if (flash === 'refused') { %>
+    <div class="alert alert-danger" data-testid="flash-refused">Not saved: <%= reason %></div>
+  <% } %>
+
+  <% if (units.length === 0) { %>
+    <div class="alert alert-info">You are not recorded as an owner or occupant of any unit today. If that is wrong, fill in the
+      <a href="/view/occupancy-information">Occupancy information</a> form.</div>
+  <% } %>
+
+  <% units.forEach(function (u) { %>
+    <div class="card mb-3" data-testid="own-unit">
+      <div class="card-header">
+        <strong><%= u.address %></strong>
+        <span class="text-muted small ms-2"><%= u.id %> · you are <%= u.as.join(' and ') %></span>
+      </div>
+      <div class="card-body">
+        <% if (u.assessment) { %>
+          <p class="mb-2"><% if (u.category) { %><%= u.category %>: <% } %>assessment <%= u.assessment.amount %>, <%= u.assessment.period %></p>
+        <% } %>
+        <p class="mb-1"><strong>Owners:</strong> <%= u.owners.map(function (o) { return o.name; }).join(', ') || 'none recorded' %></p>
+        <p class="mb-1"><strong>Occupants:</strong>
+          <% if (u.occupants.length === 0) { %>none recorded<% } %>
+          <% if (!u.occupants.some(function (o) { return o.entry; })) { u.occupants.forEach(function (o, i) { %><%= i ? ', ' : '' %><%= o.name %><% }) } %>
+        </p>
+        <% if (u.occupants.some(function (o) { return o.entry; })) { %>
+          <ul class="mb-2">
+            <% u.occupants.forEach(function (o) { %>
+              <li><%= o.name %><% if (o.email) { %> (<%= o.email %>)<% } %>
+                <% if (o.entry) { %>
+                  <form method="POST" action="/addons/accommodation/mine/<%= encodeURIComponent(u.id) %>/occupant-end" class="d-inline-flex gap-1 align-items-center ms-2">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="username" value="<%= o.entry.username %>">
+                    <input type="hidden" name="index" value="<%= o.entry.at.index %>">
+                    <input type="hidden" name="expected" value="<%= o.entry.at.expected %>">
+                    <label class="small" for="end-<%= o.entry.username %>">moved out on</label>
+                    <input type="date" id="end-<%= o.entry.username %>" name="on" class="form-control form-control-sm" style="width: 10rem" required>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
+                  </form>
+                <% } %>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+        <% if (u.billing) { %>
+          <p class="mb-1 mt-2"><strong>Billing addresses:</strong></p>
+          <ul class="mb-0">
+            <% u.billing.forEach(function (b) { %>
+              <li class="mb-2"><%= b.name %>: <%= b.address.streetAddress %><% if (b.address.addressLocality) { %>, <%= b.address.addressLocality %><% } %> (<%= b.share %>%)
+                <% if (b.yours) { %>
+                  <details class="mt-1">
+                    <summary class="small">Change this billing address</summary>
+                    <form method="POST" action="/addons/accommodation/mine/<%= encodeURIComponent(u.id) %>/billing/<%= b.index %>" class="row g-1 mt-1">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <div class="col-md-4"><input type="text" name="streetAddress" class="form-control form-control-sm" value="<%= b.address.streetAddress %>" required aria-label="Street address"></div>
+                      <div class="col-md-3"><input type="text" name="addressLocality" class="form-control form-control-sm" value="<%= b.address.addressLocality || '' %>" placeholder="City" aria-label="City"></div>
+                      <div class="col-md-1"><input type="text" name="addressRegion" class="form-control form-control-sm" value="<%= b.address.addressRegion || '' %>" placeholder="State" aria-label="State"></div>
+                      <div class="col-md-2"><input type="text" name="postalCode" class="form-control form-control-sm" value="<%= b.address.postalCode || '' %>" placeholder="ZIP" aria-label="ZIP"></div>
+                      <div class="col-md-2"><button type="submit" class="btn btn-sm btn-primary">Save</button></div>
+                    </form>
+                    <p class="small text-muted mb-0">It applies at once, and the board is told.</p>
+                  </details>
+                <% } %>
+              </li>
+            <% }) %>
+          </ul>
+        <% } else if (u.as.indexOf('owner') !== -1) { %>
+          <p class="mb-0 mt-2 text-muted">Billing addresses are not set up for this unit yet.</p>
+        <% } %>
+      </div>
+    </div>
+  <% }) %>
+</div>
+
+<%- include('footer') %>

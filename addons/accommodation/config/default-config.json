@@ -20,6 +20,12 @@
       "icon": "list",
       "color": "#6c757d"
     },
+    "accommodation-self": {
+      "description": "See your own units: those you hold a current ownership or occupancy entry for, with their owners, occupants and billing addresses. The add-on checks the entry on every request",
+      "label": "See your own accommodation",
+      "icon": "house-user",
+      "color": "#20c997"
+    },
     "accommodation-manage": {
       "description": "Manage the accommodation add-on: accommodations, owners and the directory import",
       "label": "Manage accommodations",
@@ -29,6 +35,20 @@
         "on-failure": "refuse",
         "enabled": true,
         "description": "Accommodation changed"
+      }
+    },
+    "accommodation-notices": {
+      "description": "Be told of residents' changes the board should know about: an owner's billing address, and later changes to occupants",
+      "label": "Get accommodation notices",
+      "icon": "bell",
+      "color": "#fd7e14"
+    },
+    "accommodation-billing-update": {
+      "description": "An owner changed the address of a unit's billing party they are on; who, the unit and the party, never the address",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Billing address changed by an owner"
       }
     }
   },
@@ -54,7 +74,7 @@
     {
       "id": "accommodation-admin-access",
       "name": "Accommodation administration",
-      "description": "Admins see and manage accommodations. A site grants accommodation-read or accommodation-manage to its board or treasurer in its own policy.",
+      "description": "Admins see and manage accommodations, and get its notices. A site grants accommodation-read, accommodation-manage or accommodation-notices to its board or treasurer in its own policy.",
       "priority": 90,
       "effect": "allow",
       "subjects": [
@@ -71,7 +91,8 @@
       ],
       "actions": [
         "accommodation-read",
-        "accommodation-manage"
+        "accommodation-manage",
+        "accommodation-notices"
       ]
     },
     {
@@ -98,6 +119,28 @@
       ],
       "actions": [
         "accommodation-units-list"
+      ]
+    },
+    {
+      "id": "accommodation-self-service",
+      "name": "Accommodation: every user's own units",
+      "description": "A permission over a person's own records goes to every user through vault-owner (ngdpbase#1539). The add-on still checks that the person holds a current entry for the unit.",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "vault-owner"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "accommodation-self"
       ]
     }
   ]

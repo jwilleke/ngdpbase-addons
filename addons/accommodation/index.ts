@@ -36,7 +36,13 @@ import AccommodationPlugin from './plugins/AccommodationPlugin.js';
 interface PluginManagerLike { registerPlugin(name: string, plugin: unknown): Promise<void> }
 interface ConfigurationManagerLike { resolveDataPath(p: string): string }
 interface CacheManagerLike { bump(topic: string): Promise<unknown> }
-interface PolicyDecisionPointLike { decide(subject: unknown, request: { action: string }): Promise<Decision> }
+interface PolicyDecisionPointLike {
+  decide(subject: unknown, request: { action: string }): Promise<Decision>;
+  usersHolding(action: string): Promise<string[] | null>;
+}
+interface NotificationManagerLike {
+  addNotification(n: { type: 'system'; level: 'info'; title: string; message: string; targetUsers: string[] }): Promise<string>;
+}
 interface RoleManagerLike {
   hasRole(ctx: ActorContext, username: string, roleName: string): Promise<boolean>;
   assignRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean>;
@@ -119,10 +125,29 @@ const AccommodationAddon = {
       // Every user, inactive ones too: an owner whose account is off still owes.
       users: async (ctx) => (await engine.getManager<UserManagerLike>('UserManager')?.searchUsers('', { limit: 0, activeOnly: false }, ctx)) ?? [],
       accommodation: (id) => accommodationManager.get(id),
+      // A resident's own page (#36): decided with their context, then read as the system with a reason.
+      decide,
+      systemContext: (reason) => host.systemContext(reason),
       // The admin page's changes (#28): the entries are written onto the account through UserManager.
       changes: {
         decide, recordAudit, host,
         updateUser: (username, update, ctx) => userManager().updateUser(username, update, ctx),
+        // An owner's billing address (#38): written as the system, after the owner's own decision and record.
+        writeBilling: async (systemCtx, id, billing) => {
+          const accommodation = accommodationManager.get(id);
+          if (!accommodation) throw new Error(`no accommodation ${id}`);
+          await accommodationManager.upsert(systemCtx, { ...accommodation, billing });
+        },
+        notify: async (title, message) => {
+          try {
+            const holders = await pdp?.usersHolding('accommodation-notices');
+            // An empty targetUsers would be every user: with nobody to tell, log only.
+            if (!holders || holders.length === 0) { host.logger.info(`[accommodation] Nobody holds accommodation-notices to tell: ${message}`); return; }
+            await engine.getManager<NotificationManagerLike>('NotificationManager')?.addNotification({ type: 'system', level: 'info', title, message, targetUsers: holders });
+          } catch (err) {
+            host.logger.error(`[accommodation] Could not send a notice (${message}): ${err instanceof Error ? err.message : String(err)}`);
+          }
+        },
         // The roles job runs now, as the admin who made the change; the job manager retries,
         // records and reports it. A job that cannot even start is logged; the daily run follows.
         ...(rolesJob ? {

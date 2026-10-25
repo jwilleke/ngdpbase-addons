@@ -26,7 +26,7 @@ import type { ActorContext, AddonHost } from '@jwilleke/ngdpbase-types';
 import type { Accommodation } from '../providers/AccommodationProvider.js';
 import { AccommodationRefusedError, type AccommodationAuditRecord, type Decide } from './AccommodationManager.js';
 import { fieldOf, holdsOn, isIsoDate, localToday, readEntries, readLinks, shareProblems, storedEntry, type LinkType, type UnitLink } from './unitLinks.js';
-import { joinNames, readBillingParties, unitAddress, type PostalAddress } from './billing.js';
+import { joinNames, readAddress, readBillingParties, unitAddress, type PostalAddress, type StoredBillingParty } from './billing.js';
 
 /** A person on a unit: `username` is the ngdpbase account. */
 export interface UnitMember { username: string; name: string; email: string | null }
@@ -109,6 +109,13 @@ export interface ResidencyChanges {
    */
   updateUser: (username: string, update: (current: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>, ctx: ActorContext) => Promise<unknown>;
   /**
+   * AccommodationManager's write of the unit's billing parties, under the system context with a
+   * reason naming the owner (#38); the owner's own decision and record come first, in this manager.
+   */
+  writeBilling?: (systemCtx: ActorContext, id: string, billing: StoredBillingParty[]) => Promise<void>;
+  /** Tell the holders of `accommodation-notices` (#38). Must not throw. */
+  notify?: (title: string, message: string) => Promise<void>;
+  /**
    * After a change is saved: start the roles job as the caller, so the roles follow it now
    * rather than at the next daily run. Absent, the daily run is when they follow. It must
    * not throw: a job that could not start is the job manager's to report.
@@ -116,7 +123,26 @@ export interface ResidencyChanges {
   followRoles?: (ctx: ActorContext) => Promise<void>;
 }
 
+/**
+ * One of a resident's own units (#36), as their page shows it: only what the viewer may see.
+ * Co-owners' and occupants' names; occupants' emails and the billing parties only to an owner.
+ */
+export interface OwnUnit {
+  id: string;
+  /** How the viewer holds it today: owner, occupant, or both. */
+  as: LinkType[];
+  owners: Array<{ name: string }>;
+  /** To an owner, each occupant's entry too, so the owner can end it (#37). */
+  occupants: Array<{ name: string; email?: string; entry?: { username: string; at: EntryRef } }>;
+  /** The unit's billing parties, each with its place and whether the viewer is on it (#38). */
+  billing?: Array<{ index: number; name: string; address: PostalAddress; share: number; yours: boolean }>;
+}
+
 export interface ResidencyManagerOptions {
+  /** ngdpbase's decision point, for a resident's own reads (#36). */
+  decide?: Decide;
+  /** host.systemContext: the reads a resident's page needs, made once the door has decided (#36). */
+  systemContext?: (reason: string) => ActorContext;
   /** Every user record, active or not, read as the caller (UserManager.searchUsers); absent means no users. */
   users?: (ctx: ActorContext) => Promise<UserRecord[]>;
   /** An accommodation by its parcel: AccommodationManager.get. */
@@ -152,8 +178,12 @@ export default class ResidencyManager {
   private readonly accommodation: (id: string) => Accommodation | undefined;
   private readonly today: () => string;
   private readonly changes: ResidencyChanges | undefined;
+  private readonly decide: Decide | undefined;
+  private readonly systemContext: ((reason: string) => ActorContext) | undefined;
 
   constructor(options: ResidencyManagerOptions) {
+    this.decide = options.decide;
+    this.systemContext = options.systemContext;
     this.users = options.users ?? (() => Promise.resolve([]));
     this.accommodation = options.accommodation;
     this.today = options.today ?? (() => localToday());
@@ -280,6 +310,110 @@ export default class ResidencyManager {
     return result;
   }
 
+  /**
+   * The units the caller holds a current ownership or occupies entry for, today (#36). The door
+   * decides first, with the caller's context: `accommodation-self`, which every user holds through
+   * vault-owner, and then the caller's own current entries, which are the only units returned.
+   * Only then are the other people read, under the system context with a reason naming the caller
+   * (settled with ngdpbase core, 2026-10-25), and only the fields the viewer may see are returned.
+   */
+  async ownUnits(ctx: ActorContext): Promise<OwnUnit[]> {
+    if (!this.decide || !this.systemContext) throw new Error('ResidencyManager was started without its decision point');
+    const decision = await this.decide(ctx, { action: 'accommodation-self' });
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-self', decision);
+    const me = ctx.username;
+    if (!me) return [];
+    const system = this.systemContext(`accommodation: own units and their residents, for ${me}`);
+    const users = [...await this.users(system)].sort((a, b) => a.username.localeCompare(b.username));
+    const self = users.find(u => u.username === me);
+    if (!self) return [];
+    const today = this.today();
+    const held = readLinks(self).links.filter(l => holdsOn(l, today));
+    const ids = [...new Set(held.map(l => l.parcel))].sort();
+    const result: OwnUnit[] = [];
+    for (const id of ids) {
+      const as = (['owner', 'occupant'] as const).filter(t => held.some(l => l.parcel === id && l.type === t));
+      const holding = (type: LinkType): UnitMember[] => users
+        .filter(u => readLinks(u).links.some(l => l.parcel === id && l.type === type && holdsOn(l, today)))
+        .map(memberOf);
+      const isOwner = as.includes('owner');
+      const unit: OwnUnit = {
+        id, as,
+        owners: holding('owner').map(o => ({ name: o.name })),
+        occupants: users.flatMap(u => readEntries(u).entries
+          .filter(e => e.link && e.link.parcel === id && e.link.type === 'occupant' && holdsOn(e.link, today))
+          .map(e => {
+            const o = memberOf(u);
+            return {
+              name: o.name,
+              ...(isOwner && o.email ? { email: o.email } : {}),
+              ...(isOwner ? { entry: { username: u.username, at: { type: 'occupant' as const, index: e.index, expected: JSON.stringify(e.raw) } } } : {})
+            };
+          }))
+      };
+      if (isOwner) {
+        // Billing parties the unit cannot bill yet (no address, shares off) are left out, not guessed.
+        unit.billing = await this.billing(system, id).then(parties => parties.map((p, index) =>
+          ({ index, name: p.name, address: p.address, share: p.share, yours: p.to.some(o => o.username === me) })), () => undefined);
+      }
+      result.push(unit);
+    }
+    return result;
+  }
+
+  /**
+   * An owner sets the address of a billing party they are on (#38; operator, 2026-10-22: it
+   * applies at once, with a notice to the Board of Directors). The door decides with the owner's
+   * context: `accommodation-self`, a current owner of the unit, on that party. A unit that keeps no
+   * parties has one, all its current owners; setting its address keeps that party. Recorded as
+   * `accommodation-billing-update` under the owner's context first (on-failure refuse), then
+   * written by AccommodationManager under the system context with a reason naming the owner, then
+   * the holders of `accommodation-notices` are told.
+   */
+  async setBillingAddress(ctx: ActorContext, id: string, partyIndex: number, value: unknown): Promise<void> {
+    const changes = this.changes;
+    if (!changes?.writeBilling || !this.decide || !this.systemContext) throw new Error('ResidencyManager was started without its billing door');
+    const decision = await this.decide(ctx, { action: 'accommodation-self' });
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-self', decision);
+    const me = ctx.username ?? '';
+    const accommodation = this.accommodation(id);
+    if (!accommodation) throw new LinkChangeRefusedError(`no accommodation ${id}`);
+    const system = this.systemContext(`accommodation: billing address of unit ${id}, set by its owner ${me}`);
+    const owners = await this.owners(system, id);
+    if (!owners.some(o => o.username === me)) throw new LinkChangeRefusedError(`you are not a current owner of unit ${id}`);
+    const address = readAddress(value);
+    if (!address) throw new LinkChangeRefusedError('a billing address needs a street address');
+
+    let parties: StoredBillingParty[];
+    try {
+      parties = readBillingParties(id, accommodation.billing)
+        ?? [{ to: owners.map(o => o.username), address: unitAddress(accommodation) ?? address, share: 100 }];
+    } catch (err) {
+      throw new LinkChangeRefusedError(`the unit's billing parties need fixing by an administrator first: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const party = parties[partyIndex];
+    if (!Number.isInteger(partyIndex) || !party) throw new LinkChangeRefusedError(`unit ${id} has no billing party ${partyIndex}`);
+    if (!party.to.includes(me)) throw new LinkChangeRefusedError(`you are not on billing party ${partyIndex} of unit ${id}`);
+    const next = parties.map((p, i) => (i === partyIndex ? { ...p, address } : p));
+
+    const { metadata: whoMetadata, ...who } = changes.host.actorOf(ctx);
+    const record = (result: 'success' | 'failure', reason?: string): AccommodationAuditRecord => ({
+      eventType: changes.host.addonAuditEventName('accommodation-billing-update'),
+      ...who, result,
+      action: 'billing-address-set', severity: 'medium', resource: id, resourceType: 'accommodation',
+      // names, never values
+      metadata: { ...whoMetadata, party: partyIndex, fields: Object.keys(address).sort(), ...(reason ? { reason } : {}) }
+    });
+    await changes.recordAudit(record('success'));
+    try {
+      await changes.writeBilling(system, id, next);
+    } catch (err) {
+      await changes.recordAudit(record('failure', err instanceof Error ? err.message : String(err))).catch(() => undefined);
+      throw err;
+    }
+    await changes.notify?.('Billing address changed', `An owner of unit ${id} changed the address of its billing party ${partyIndex + 1}.`);
+  }
+
   /** Every account, by username, as the add-on's pages offer them: display name and email. */
   async people(ctx: ActorContext): Promise<UnitMember[]> {
     return (await this.users(ctx)).map(memberOf).sort((a, b) => a.username.localeCompare(b.username));
@@ -339,12 +473,18 @@ export default class ResidencyManager {
    * `accommodation-manage` before it is written, naming the fields changed, never their
    * values; a write that then fails is recorded as a failure and thrown. Then the roles job
    * is started as the caller (followRoles).
+   *
+   * Without `accommodation-manage`, a current owner of a unit may end an occupant's entry on that
+   * unit (#37; settled with ngdpbase core, 2026-10-25): `accommodation-self`, the caller a current
+   * owner of the entry's unit, an occupies entry, and `end` only; never an owner's entry. It is
+   * recorded the same way, and the holders of `accommodation-notices` are told.
    */
   async changeLink(ctx: ActorContext, username: string, change: LinkChange): Promise<LinkChangeResult> {
     const changes = this.changes;
     if (!changes) throw new Error('ResidencyManager was started without its write side');
     const decision = await changes.decide(ctx, { action: 'accommodation-manage' });
-    if (!decision.permit) throw new AccommodationRefusedError('accommodation-manage', decision);
+    const byOwner = !decision.permit && await this.ownerMayEnd(ctx, username, change);
+    if (!decision.permit && !byOwner) throw new AccommodationRefusedError('accommodation-manage', decision);
 
     if (!(await this.users(ctx)).some(u => u.username === username)) throw new LinkChangeRefusedError(`no account named ${username}`);
     const type = change.op === 'add' || change.op === 'correct' ? change.link.type : change.at.type;
@@ -382,9 +522,28 @@ export default class ResidencyManager {
     if (!done) return { changed: false };
 
     await changes.followRoles?.(ctx);
+    if (byOwner) {
+      await changes.notify?.('Occupant ended by an owner', `An owner of unit ${(planned as { parcel: string } | null)?.parcel ?? ''} ended an occupant's entry.`);
+    }
     if (change.op !== 'add') return { changed: true };
     const index = done.next.length - 1;
     return { changed: true, at: { type, index, expected: JSON.stringify(done.next[index]) } };
+  }
+
+  /**
+   * Whether the caller may end this occupant's entry as an owner of its unit (#37): an `end` of an
+   * occupies entry, `accommodation-self`, and a current ownership entry on the entry's unit. The
+   * entry is read here to find its unit; the write then checks it has not changed since.
+   */
+  private async ownerMayEnd(ctx: ActorContext, username: string, change: LinkChange): Promise<boolean> {
+    if (change.op !== 'end' || change.at.type !== 'occupant' || !this.decide || !this.systemContext || !ctx.username) return false;
+    const self = await this.decide(ctx, { action: 'accommodation-self' });
+    if (!self.permit) return false;
+    const system = this.systemContext(`accommodation: whether ${ctx.username} owns the unit of ${username}'s occupancy`);
+    const target = (await this.users(system)).find(u => u.username === username);
+    const entry = target ? readEntries(target).entries.find(e => e.type === 'occupant' && e.index === change.at.index) : undefined;
+    if (!entry?.link || JSON.stringify(entry.raw) !== change.at.expected) return false;
+    return (await this.owners(system, entry.link.parcel)).some(o => o.username === ctx.username);
   }
 
   /**
