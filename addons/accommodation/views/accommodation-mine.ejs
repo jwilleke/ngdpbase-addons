@@ -6,7 +6,7 @@
     Your bills, payments and balance are on <a href="/profile">your profile</a>.</p>
 
   <% if (flash === 'billing-saved') { %>
-    <div class="alert alert-success" data-testid="flash-billing-saved">Billing address saved. The board has been told.</div>
+    <div class="alert alert-success" data-testid="flash-billing-saved">Billing saved. The board has been told.</div>
   <% } else if (flash === 'occupant-ended') { %>
     <div class="alert alert-success" data-testid="flash-occupant-ended">Saved: the occupant's last date is set. The board has been told.</div>
   <% } else if (flash === 'occupant-added') { %>
@@ -89,29 +89,15 @@
           </details>
         <% } %>
         <% if (u.billing) { %>
-          <p class="mb-1 mt-2"><strong>Billing addresses:</strong></p>
-          <ul class="mb-0">
-            <% u.billing.forEach(function (b) { %>
-              <li class="mb-2"><%= b.name %>: <%= b.address.streetAddress %><% if (b.address.addressLocality) { %>, <%= b.address.addressLocality %><% } %> (<%= b.share %>%)
-                <% if (b.yours) { %>
-                  <details class="mt-1">
-                    <summary class="small">Change this billing address</summary>
-                    <form method="POST" action="/addons/accommodation/mine/<%= encodeURIComponent(u.id) %>/billing/<%= b.index %>" class="row g-1 mt-1">
-                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <div class="col-md-4"><input type="text" name="streetAddress" class="form-control form-control-sm" value="<%= b.address.streetAddress %>" required aria-label="Street address"></div>
-                      <div class="col-md-3"><input type="text" name="addressLocality" class="form-control form-control-sm" value="<%= b.address.addressLocality || '' %>" placeholder="City" aria-label="City"></div>
-                      <div class="col-md-1"><input type="text" name="addressRegion" class="form-control form-control-sm" value="<%= b.address.addressRegion || '' %>" placeholder="State" aria-label="State"></div>
-                      <div class="col-md-2"><input type="text" name="postalCode" class="form-control form-control-sm" value="<%= b.address.postalCode || '' %>" placeholder="ZIP" aria-label="ZIP"></div>
-                      <div class="col-md-2"><button type="submit" class="btn btn-sm btn-primary">Save</button></div>
-                    </form>
-                    <p class="small text-muted mb-0">It applies at once, and the board is told.</p>
-                  </details>
-                <% } %>
-              </li>
-            <% }) %>
-          </ul>
+          <details class="mt-2">
+            <summary><strong>Billing addresses:</strong> <%= u.billing.map(function (b) { return b.address.split('\n')[0] + ' (' + b.share + '%)'; }).join('; ') %></summary>
+            <div class="mt-2">
+              <%- include('accommodation-billing-form', { action: '/addons/accommodation/mine/' + encodeURIComponent(u.id) + '/billing', entries: u.billing.map(function (b) { return { address: b.address, share: String(b.share) }; }), usesUnitAddress: false, problem: '', csrfToken: csrfToken }) %>
+              <p class="small text-muted mb-0">It applies at once, and the board is told.</p>
+            </div>
+          </details>
         <% } else if (u.as.indexOf('owner') !== -1) { %>
-          <p class="mb-0 mt-2 text-muted">Billing addresses are not set up for this unit yet.</p>
+          <p class="mb-0 mt-2 text-muted">This unit's billing needs the treasurer to fix it before it can be changed here.</p>
         <% } %>
       </div>
     </div>

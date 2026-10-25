@@ -187,6 +187,19 @@ const AccommodationAddon = {
       }
     });
     engine.registerManager('ResidencyManager', residency);
+
+    // Billing kept in the earlier shape (owners named, a structured address) becomes billing entries,
+    // once (ngdpbase#2042): each unit in its own write, under the system context; counts only in the log.
+    try {
+      const converted = await residency.convertBilling(
+        host.systemContext('accommodation: convert billing to billing entries (ngdpbase#2042)'),
+        accommodationManager.list().map(a => a.id));
+      if (converted.converted > 0 || converted.untouched.length > 0) {
+        host.logger.info(`[accommodation] Billing converted on ${converted.converted} accommodation(s); ${converted.untouched.length} left as they are because they name a username with no account (the treasurer fixes those on the unit's page).`);
+      }
+    } catch (err) {
+      host.logger.error(`[accommodation] Billing could not be converted: ${err instanceof Error ? err.message : String(err)}`);
+    }
     statusContext = () => host.systemContext('accommodation: status, accommodations with no current owner');
 
     // The roles job: a change on the admin page starts it at once (above); every day it gives

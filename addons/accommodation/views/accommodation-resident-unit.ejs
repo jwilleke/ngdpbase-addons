@@ -7,6 +7,8 @@
 
   <% if (flash === 'saved') { %>
     <div class="alert alert-success" data-testid="flash-saved">Saved. The owner and occupant roles follow it when the roles job has run (Admin → Scheduled Jobs).</div>
+  <% } else if (flash === 'billing-saved') { %>
+    <div class="alert alert-success" data-testid="flash-billing-saved">Billing saved.</div>
   <% } else if (flash === 'unchanged') { %>
     <div class="alert alert-info" data-testid="flash-unchanged">Nothing to change.</div>
   <% } else if (flash === 'refused') { %>
@@ -32,6 +34,11 @@
   <% } else { %>
     <p class="text-muted mb-4">No county record on this accommodation.</p>
   <% } %>
+
+  <h4>Billing</h4>
+  <div class="mb-4">
+    <%- include('accommodation-billing-form', { action: '/addons/accommodation/residents/' + encodeURIComponent(parcel) + '/billing', entries: billing.entries, usesUnitAddress: billing.usesUnitAddress, problem: billing.problem || '', csrfToken: csrfToken }) %>
+  </div>
 
   <h4>Entries</h4>
   <% if (entries.length === 0) { %>

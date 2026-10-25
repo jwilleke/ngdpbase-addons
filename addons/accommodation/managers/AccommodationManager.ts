@@ -11,7 +11,7 @@
  * `floorSize`, `address`, `containedInPlace`, plus `billing` and `notes`.
  *
  * Who owns or lives in an accommodation is ResidencyManager's (managers/ResidencyManager.ts);
- * the accommodation keeps only its billing parties (`billing`, #14).
+ * the accommodation keeps only where its invoices go (`billing`, ngdpbase#2042).
  *
  * Every write goes through write(), which saves and then bumps the
  * 'AccommodationManager' cache topic, so pages showing accommodations re-render. Every change

@@ -5,7 +5,8 @@
  *   GET  /residents/:parcel          one accommodation: every owner and occupant entry, past and present
  *   POST /residents/:parcel/change   add, end, correct or remove one entry (#28)
  *   GET  /mine                       a signed-in resident's own units (#36), under accommodation-self
- *   POST /mine/:parcel/billing/:index an owner sets the address of a billing party they are on (#38)
+ *   POST /residents/:parcel/billing the treasurer sets where the unit's invoices go (ngdpbase#2042)
+ *   POST /mine/:parcel/billing       an owner sets where their unit's invoices go, as the treasurer can (ngdpbase#2042)
  *   POST /mine/:parcel/occupant-end  an owner ends an occupant's entry on their unit (#37)
  *   POST /mine/:parcel/occupant-details an owner changes an occupant's phones, work and emergency contact (#37)
  *   POST /mine/:parcel/occupant-add  an owner adds an occupant, with a new account and invitation when needed (#37)
@@ -21,7 +22,7 @@ import type AccommodationManager from '../managers/AccommodationManager.js';
 import type ResidencyManager from '../managers/ResidencyManager.js';
 import type { LinkChange, LinkChangeResult } from '../managers/ResidencyManager.js';
 import type { LinkType, UnitLink } from '../managers/unitLinks.js';
-import { unitAddress } from '../managers/billing.js';
+import { billingForForm, unitAddress } from '../managers/billing.js';
 import { countyRecordOf } from '../managers/countyRecord.js';
 import { OCCUPANT_EDITABLE_FIELDS } from '../managers/contactDetails.js';
 
@@ -67,6 +68,20 @@ function changeFrom(body: Record<string, unknown>, parcel: string): LinkChange |
     case 'remove': return { op, at };
     default: return `unknown change "${op}"`;
   }
+}
+
+/**
+ * The billing entries a form posts: rows of `address` (free text, several lines) and `share`. A row
+ * with no address is dropped and a blank share left out; the manager checks the rest.
+ */
+function billingFrom(body: Record<string, unknown>): unknown[] {
+  const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : v === undefined ? [] : [v]);
+  const shares = list(body['share']);
+  return list(body['address']).flatMap((a, i) => {
+    const address = typeof a === 'string' ? a.replace(/\r\n?/g, '\n').trim() : '';
+    const share = typeof shares[i] === 'string' ? (shares[i] as string).trim() : '';
+    return address === '' ? [] : [{ address, ...(share === '' ? {} : { share: Number(share) }) }];
+  });
 }
 
 /** Where to go after a change, with what to tell the admin. */
@@ -129,6 +144,7 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           parcel,
           label: unitLabel(accommodations, parcel),
           county: countyRecordOf(accommodations.get(parcel)),
+          billing: billingForForm(accommodations.get(parcel)),
           entries,
           shareProblems,
           people: await residency.people(actor),
@@ -309,36 +325,38 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
     })();
   });
 
-  router.post('/mine/:parcel/billing/:index', (req: Request, res: Response) => {
-    void (async () => {
-      const ctx = ApiContext.from(req, engine as never);
-      try {
-        await ctx.requirePermission('accommodation-self');
-        const body = (req.body ?? {}) as Record<string, unknown>;
-        await managers().residency.setBillingAddress(ctx.getActor(), String(req.params['parcel']), Number(req.params['index']), {
-          streetAddress: text(body, 'streetAddress'), addressLocality: text(body, 'addressLocality'),
-          addressRegion: text(body, 'addressRegion'), postalCode: text(body, 'postalCode')
-        });
-        res.redirect('/addons/accommodation/mine?flash=billing-saved');
-      } catch (err) {
+  // Where the unit's invoices go (ngdpbase#2042): the treasurer from the unit's page, an owner from
+  // their own; ResidencyManager.setBilling decides which, and refuses the same things for both.
+  const billingRoute = (permission: 'accommodation-manage' | 'accommodation-self', back: (parcel: string) => string) =>
+    (req: Request, res: Response) => {
+      void (async () => {
+        const ctx = ApiContext.from(req, engine as never);
+        const parcel = String(req.params['parcel']);
         try {
-          if ((err as Error).name === 'AccommodationRefusedError') {
-            const refused = err as { permission: string; decision: never };
-            await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
+          await ctx.requirePermission(permission);
+          await managers().residency.setBilling(ctx.getActor(), parcel, billingFrom((req.body ?? {}) as Record<string, unknown>));
+          res.redirect(`${back(parcel)}?flash=billing-saved`);
+        } catch (err) {
+          try {
+            if ((err as Error).name === 'AccommodationRefusedError') {
+              const refused = err as { permission: string; decision: never };
+              await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
+            }
+            if ((err as Error).name === 'LinkChangeRefusedError') {
+              res.redirect(`${back(parcel)}?flash=refused&reason=${encodeURIComponent((err as Error).message)}`);
+              return;
+            }
+            throw err;
+          } catch (answer) {
+            if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
+            host.logger.error(`[accommodation] A billing change to ${parcel} failed: ${answer instanceof Error ? answer.message : String(answer)}`);
+            res.status(500).send('The billing was not saved');
           }
-          if ((err as Error).name === 'LinkChangeRefusedError') {
-            res.redirect(`/addons/accommodation/mine?flash=refused&reason=${encodeURIComponent((err as Error).message)}`);
-            return;
-          }
-          throw err;
-        } catch (answer) {
-          if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
-          host.logger.error(`[accommodation] A billing address change failed: ${answer instanceof Error ? answer.message : String(answer)}`);
-          res.status(500).send('The billing address was not saved');
         }
-      }
-    })();
-  });
+      })();
+    };
+  router.post('/residents/:parcel/billing', billingRoute('accommodation-manage', parcel => `/addons/accommodation/residents/${encodeURIComponent(parcel)}`));
+  router.post('/mine/:parcel/billing', billingRoute('accommodation-self', () => '/addons/accommodation/mine'));
 
   return router;
 }

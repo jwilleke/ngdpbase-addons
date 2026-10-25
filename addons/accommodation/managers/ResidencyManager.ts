@@ -5,9 +5,9 @@
  * The links live on the ngdpbase user records, as the extended fields
  * `ownership` (OwnershipInfo) and `occupies` (Role)
  * (https://github.com/jwilleke/ngdpbase-addons/issues/21, unitLinks.ts); this
- * manager is their door. The accommodations themselves, and the billing parties kept on
+ * manager is their door. The accommodations themselves, and the billing entries kept on
  * each, are AccommodationManager's; billing() reads them with the owners
- * (https://github.com/jwilleke/ngdpbase-addons/issues/14).
+ * (https://github.com/jwilleke/ngdpbase/issues/2042).
  *
  * Users are read with the caller's context (a person's, or a job's with its
  * reason), so the read is attributed; the permission decision is made at the
@@ -27,13 +27,16 @@ import type { Accommodation } from '../providers/AccommodationProvider.js';
 import { AccommodationRefusedError, type AccommodationAuditRecord, type Decide } from './AccommodationManager.js';
 import { fieldOf, holdsOn, isIsoDate, localToday, readEntries, readLinks, shareProblems, storedEntry, type LinkType, type UnitLink } from './unitLinks.js';
 import { contactDetailsFrom, occupantAnswersFrom, OCCUPANT_EDITABLE_FIELDS, OCCUPANT_EDITABLE_TYPES } from './contactDetails.js';
-import { joinNames, readAddress, readBillingParties, unitAddress, type PostalAddress, type StoredBillingParty } from './billing.js';
+import { addressText, convertLegacyBilling, isLegacyBilling, readBilling, unitAddress, type BillingEntry } from './billing.js';
 
 /** A person on a unit: `username` is the ngdpbase account. */
 export interface UnitMember { username: string; name: string; email: string | null }
 
-/** One invoice: the owners it is addressed to, where it goes, and the percent of the assessment. */
-export interface BillingParty { to: UnitMember[]; name: string; address: PostalAddress; share: number }
+/** An owner as billing() gives it: their identity @id, never a username, and their share of the unit. */
+export interface BillingOwner { '@id': string; share: number }
+
+/** What billing() gives (ngdpbase#2042): where the invoices go, and who owes them. */
+export interface Billing { billing: BillingEntry[]; owners: BillingOwner[] }
 
 /** One link of a unit's history, with the person it names. */
 export interface UnitHistoryEntry extends UnitMember { type: LinkType; from: string; to: string }
@@ -114,10 +117,11 @@ export interface ResidencyChanges {
   /** AuthManager.inviteUser, under the system context: 'sent', or why nothing was sent. */
   inviteUser?: (systemCtx: ActorContext, username: string) => Promise<{ outcome: string; reason?: string }>;
   /**
-   * AccommodationManager's write of the unit's billing parties, under the system context with a
-   * reason naming the owner (#38); the owner's own decision and record come first, in this manager.
+   * AccommodationManager's write of the unit's billing entries, under the system context with a
+   * reason naming the caller; undefined removes them. The caller's own decision and record come
+   * first, in this manager.
    */
-  writeBilling?: (systemCtx: ActorContext, id: string, billing: StoredBillingParty[]) => Promise<void>;
+  writeBilling?: (systemCtx: ActorContext, id: string, billing: BillingEntry[] | undefined) => Promise<void>;
   /** Tell the holders of `accommodation-notices` (#38). Must not throw. */
   notify?: (title: string, message: string) => Promise<void>;
   /**
@@ -130,7 +134,7 @@ export interface ResidencyChanges {
 
 /**
  * One of a resident's own units (#36), as their page shows it: only what the viewer may see.
- * Co-owners' and occupants' names; occupants' emails and the billing parties only to an owner.
+ * Co-owners' and occupants' names; occupants' emails and the billing entries only to an owner.
  */
 export interface OwnUnit {
   id: string;
@@ -139,8 +143,8 @@ export interface OwnUnit {
   owners: Array<{ name: string }>;
   /** To an owner, each occupant's entry too, so the owner can end it (#37). */
   occupants: Array<{ name: string; email?: string; entry?: { username: string; at: EntryRef }; details?: Record<string, string> }>;
-  /** The unit's billing parties, each with its place and whether the viewer is on it (#38). */
-  billing?: Array<{ index: number; name: string; address: PostalAddress; share: number; yours: boolean }>;
+  /** To an owner, where the unit's invoices go, to change it (ngdpbase#2042); absent when it needs the treasurer first. */
+  billing?: BillingEntry[];
 }
 
 /** core's IdentityManager, under the system context once a door has decided (#37). */
@@ -237,45 +241,51 @@ export default class ResidencyManager {
   }
 
   /**
-   * Who gets the unit's invoices on a date (today unless `on` is given): one
-   * party per billing address, each with its owners, address and share. With
-   * no parties kept on the unit, one party: every current owner at the unit's
-   * own address, 100%. Throws, naming the unit, rather than bill wrongly: a
-   * party naming someone who is not a current owner, shares that do not add
-   * up to 100, no owners, or no address.
+   * The unit's invoices on a date (today unless `on` is given), ngdpbase#2042: `billing`, where they
+   * go (the entries kept on the unit, else its own address at 100%), and `owners`, who owes them:
+   * each current owner by identity @id with their share, ordered by @id. Accounting reads names through
+   * IdentityManager; none are copied here. Throws, naming the unit, rather than bill wrongly: no
+   * owner, owner shares or billing shares that do not add up to 100, nowhere to send it, or an owner
+   * with no identity record.
    *
    * The door for anyone outside this manager, accounting's invoice job included: it decides
    * `accommodation-billing-read` with the caller's context, then reads the owners it needs under
    * the system context with a reason naming the caller and unit, and returns only billing fields
    * (asked by ngdpbase core for accounting, 2026-10-25). A job with no roles needs no search-user.
    */
-  async billing(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<BillingParty[]> {
+  async billing(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<Billing> {
     if (!this.decide || !this.systemContext) throw new Error('ResidencyManager was started without its decision point');
     const decision = await this.decide(ctx, { action: 'accommodation-billing-read' });
     if (!decision.permit) throw new AccommodationRefusedError('accommodation-billing-read', decision);
-    return this.billingOf(this.systemContext(`accommodation: billing parties of unit ${id}, for ${ctx.username ?? 'unknown'}`), id, options);
+    return this.billingOf(this.systemContext(`accommodation: billing of unit ${id}, for ${ctx.username ?? 'unknown'}`), id, options);
   }
 
   /** billing() once the door has decided: read as the context given (the system's). */
-  private async billingOf(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<BillingParty[]> {
-    const owners = await this.owners(ctx, id, options);
-    if (owners.length === 0) throw new Error(`unit ${id}: no current owner to bill`);
-    const byName = new Map(owners.map(o => [o.username, o]));
+  private async billingOf(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<Billing> {
+    if (!this.identities) throw new Error('ResidencyManager was started without its identity door');
+    const date = options.on ?? this.today();
+    const held = (await this.linksTo(ctx, id)).filter(({ link }) => link.type === 'owner' && holdsOn(link, date));
+    if (held.length === 0) throw new Error(`unit ${id}: no current owner to bill`);
+    const total = held.reduce((t, { link }) => t + (link.share ?? 0), 0);
+    if (Math.abs(total - 100) > 1e-9) throw new Error(`unit ${id}: owner shares add up to ${total}%, not 100%`);
+    const billing = this.billingEntries(id);
+    const owners = new Map<string, number>();
+    for (const { user, link } of held) {
+      const identity = await this.identities.find(ctx, user.username);
+      if (!identity) throw new Error(`unit ${id}: an owner has no identity record`);
+      owners.set(identity.id, (owners.get(identity.id) ?? 0) + (link.share ?? 0));
+    }
+    return { billing, owners: [...owners].sort(([a], [b]) => a.localeCompare(b)).map(([at, share]) => ({ '@id': at, share })) };
+  }
+
+  /** Where the unit's invoices go: its billing entries, else its own address at 100%. Throws when neither reads. */
+  private billingEntries(id: string): BillingEntry[] {
     const accommodation = this.accommodation(id);
-    const stored = readBillingParties(id, accommodation?.billing);
-    const parties = stored ?? (() => {
-      const address = unitAddress(accommodation);
-      if (!address) throw new Error(`unit ${id}: no billing parties and no unit address to bill`);
-      return [{ to: owners.map(o => o.username), address, share: 100 }];
-    })();
-    return parties.map((p, i) => {
-      const to = p.to.map(username => {
-        const owner = byName.get(username);
-        if (!owner) throw new Error(`unit ${id}: billing[${i}] names ${username}, who is not a current owner`);
-        return owner;
-      });
-      return { to, name: joinNames(to.map(o => o.name)), address: p.address, share: p.share };
-    });
+    const stored = readBilling(id, accommodation?.billing);
+    if (stored) return stored;
+    const address = unitAddress(accommodation);
+    if (!address) throw new Error(`unit ${id}: no billing entries and no unit address to bill`);
+    return [{ address: addressText(address), share: 100 }];
   }
 
   /** The people living in the unit on a date (today unless `on` is given); never billed. */
@@ -389,9 +399,8 @@ export default class ResidencyManager {
         }
       }
       if (isOwner) {
-        // Billing parties the unit cannot bill yet (no address, shares off) are left out, not guessed.
-        unit.billing = await this.billingOf(system, id).then(parties => parties.map((p, index) =>
-          ({ index, name: p.name, address: p.address, share: p.share, yours: p.to.some(o => o.username === me) })), () => undefined);
+        // Billing the unit cannot read (shares off, the earlier shape) is left out, not guessed.
+        try { unit.billing = this.billingEntries(id); } catch { /* the treasurer fixes it first */ }
       }
       result.push(unit);
     }
@@ -399,47 +408,43 @@ export default class ResidencyManager {
   }
 
   /**
-   * An owner sets the address of a billing party they are on (#38; operator, 2026-10-22: it
-   * applies at once, with a notice to the Board of Directors). The door decides with the owner's
-   * context: `accommodation-self`, a current owner of the unit, on that party. A unit that keeps no
-   * parties has one, all its current owners; setting its address keeps that party. Recorded as
-   * `accommodation-billing-update` under the owner's context first (on-failure refuse), then
-   * written by AccommodationManager under the system context with a reason naming the owner, then
-   * the holders of `accommodation-notices` are told.
+   * Sets where the unit's invoices go (ngdpbase#2042; operator, 2026-10-25): the whole list of
+   * billing entries, each a free-form address and a share; an empty list goes back to the unit's own
+   * address. The treasurer (`accommodation-manage`) may, and so may any current owner of the unit
+   * (`accommodation-self`), with the same rights. Checked before anything is written. Recorded as
+   * `accommodation-billing-update` under the caller first (on-failure refuse; counts, never the
+   * addresses), then written by AccommodationManager under the system context with a reason naming
+   * the caller, then the holders of `accommodation-notices` are told.
    */
-  async setBillingAddress(ctx: ActorContext, id: string, partyIndex: number, value: unknown): Promise<void> {
+  async setBilling(ctx: ActorContext, id: string, entries: unknown[]): Promise<void> {
     const changes = this.changes;
     if (!changes?.writeBilling || !this.decide || !this.systemContext) throw new Error('ResidencyManager was started without its billing door');
-    const decision = await this.decide(ctx, { action: 'accommodation-self' });
-    if (!decision.permit) throw new AccommodationRefusedError('accommodation-self', decision);
-    const me = ctx.username ?? '';
-    const accommodation = this.accommodation(id);
-    if (!accommodation) throw new LinkChangeRefusedError(`no accommodation ${id}`);
-    const system = this.systemContext(`accommodation: billing address of unit ${id}, set by its owner ${me}`);
-    const owners = await this.owners(system, id);
-    if (!owners.some(o => o.username === me)) throw new LinkChangeRefusedError(`you are not a current owner of unit ${id}`);
-    const address = readAddress(value);
-    if (!address) throw new LinkChangeRefusedError('a billing address needs a street address');
-
-    let parties: StoredBillingParty[];
-    try {
-      parties = readBillingParties(id, accommodation.billing)
-        ?? [{ to: owners.map(o => o.username), address: unitAddress(accommodation) ?? address, share: 100 }];
-    } catch (err) {
-      throw new LinkChangeRefusedError(`the unit's billing parties need fixing by an administrator first: ${err instanceof Error ? err.message : String(err)}`);
+    let by: 'treasurer' | 'owner' = 'treasurer';
+    if (!(await this.decide(ctx, { action: 'accommodation-manage' })).permit) {
+      const decision = await this.decide(ctx, { action: 'accommodation-self' });
+      if (!decision.permit) throw new AccommodationRefusedError('accommodation-self', decision);
+      by = 'owner';
     }
-    const party = parties[partyIndex];
-    if (!Number.isInteger(partyIndex) || !party) throw new LinkChangeRefusedError(`unit ${id} has no billing party ${partyIndex}`);
-    if (!party.to.includes(me)) throw new LinkChangeRefusedError(`you are not on billing party ${partyIndex} of unit ${id}`);
-    const next = parties.map((p, i) => (i === partyIndex ? { ...p, address } : p));
+    const me = ctx.username ?? '';
+    if (!this.accommodation(id)) throw new LinkChangeRefusedError(`no accommodation ${id}`);
+    const system = this.systemContext(`accommodation: billing entries of unit ${id}, set by ${by} ${me}`);
+    if (by === 'owner' && !(await this.owners(system, id)).some(o => o.username === me)) {
+      throw new LinkChangeRefusedError(`you are not a current owner of unit ${id}`);
+    }
+    let next: BillingEntry[] | undefined;
+    try {
+      next = entries.length === 0 ? undefined : readBilling(id, entries);
+    } catch (err) {
+      throw new LinkChangeRefusedError(err instanceof Error ? err.message : String(err));
+    }
 
     const { metadata: whoMetadata, ...who } = changes.host.actorOf(ctx);
     const record = (result: 'success' | 'failure', reason?: string): AccommodationAuditRecord => ({
       eventType: changes.host.addonAuditEventName('accommodation-billing-update'),
       ...who, result,
-      action: 'billing-address-set', severity: 'medium', resource: id, resourceType: 'accommodation',
-      // names, never values
-      metadata: { ...whoMetadata, party: partyIndex, fields: Object.keys(address).sort(), ...(reason ? { reason } : {}) }
+      action: 'billing-set', severity: 'medium', resource: id, resourceType: 'accommodation',
+      // counts, never the addresses
+      metadata: { ...whoMetadata, by, entries: next?.length ?? 0, fields: ['billing'], ...(reason ? { reason } : {}) }
     });
     await changes.recordAudit(record('success'));
     try {
@@ -448,7 +453,31 @@ export default class ResidencyManager {
       await changes.recordAudit(record('failure', err instanceof Error ? err.message : String(err))).catch(() => undefined);
       throw err;
     }
-    await changes.notify?.('Billing address changed', `An owner of unit ${id} changed the address of its billing party ${partyIndex + 1}.`);
+    await changes.notify?.('Billing changed', by === 'owner'
+      ? `An owner of unit ${id} changed where its invoices go.`
+      : `The treasurer changed where the invoices of unit ${id} go.`);
+  }
+
+  /**
+   * Billing kept in the earlier shape (owners named in `to`, a structured address) becomes billing
+   * entries, once at start-up (ngdpbase#2042), under the system context given: each unit in its own
+   * write. A unit naming a username with no account is left as it is and returned in `untouched`.
+   */
+  async convertBilling(systemCtx: ActorContext, ids: string[]): Promise<{ converted: number; untouched: string[] }> {
+    const legacy = ids.filter(id => isLegacyBilling(this.accommodation(id)?.billing));
+    if (legacy.length === 0) return { converted: 0, untouched: [] };
+    const writeBilling = this.changes?.writeBilling;
+    if (!writeBilling) throw new Error('ResidencyManager was started without its billing door');
+    const names = new Map((await this.users(systemCtx)).map(u => [u.username, memberOf(u).name]));
+    const untouched: string[] = [];
+    let converted = 0;
+    for (const id of legacy) {
+      const out = convertLegacyBilling(this.accommodation(id)?.billing as unknown[], u => names.get(u));
+      if ('missing' in out) { untouched.push(id); continue; }
+      await writeBilling(systemCtx, id, out.billing as BillingEntry[]);
+      converted++;
+    }
+    return { converted, untouched };
   }
 
   /** The Occupancy information form's answers as identity-record fields: the one mapping (contactDetails.ts). */

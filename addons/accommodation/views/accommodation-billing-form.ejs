@@ -1,0 +1,27 @@
+<%# Where a unit's invoices go (ngdpbase#2042): the treasurer's and the owners' form. Locals: action, entries [{address, share}], usesUnitAddress, problem, csrfToken. %>
+<% if (problem) { %>
+  <div class="alert alert-warning small" data-testid="billing-problem">This billing cannot be used until it is fixed: <%= problem %></div>
+<% } %>
+<form method="POST" action="<%= action %>" data-testid="billing-form">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <% entries.concat([{ address: '', share: '' }]).forEach(function (e, i) { %>
+    <div class="row g-2 mb-2 align-items-start">
+      <div class="col-md-8">
+        <label class="form-label small mb-0" for="<%= action %>-address-<%= i %>"><%= i < entries.length ? 'Send invoices to' : 'Add another address' %></label>
+        <textarea id="<%= action %>-address-<%= i %>" name="address" rows="3" class="form-control form-control-sm" placeholder="Names on the invoice&#10;Street&#10;City State ZIP"><%= e.address %></textarea>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-0" for="<%= action %>-share-<%= i %>">Share %</label>
+        <input type="number" id="<%= action %>-share-<%= i %>" name="share" class="form-control form-control-sm" min="0.01" max="100" step="any" value="<%= e.share %>">
+      </div>
+    </div>
+  <% }) %>
+  <button type="submit" class="btn btn-sm btn-primary">Save billing</button>
+</form>
+<p class="small text-muted mt-1 mb-0">
+  Type each address the way it goes on the envelope, names first. With one address, the share can be left empty: it is 100%.
+  With more than one, give each its share; they must add up to 100%. To take an address off, empty its box.
+  Empty every box to send invoices to the unit's own address again.
+  <% if (usesUnitAddress) { %>Right now the invoices go to the unit's own address.<% } %>
+  Who owes is always the unit's owners on the invoice date, by their shares; these addresses only say where the invoices are sent.
+</p>

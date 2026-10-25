@@ -27,8 +27,8 @@ export const SAMPLE_ACCOMMODATIONS: Accommodation[] = [
     id: '66-00001.000', streetNo: '101', streetName: 'Sample', streetType: 'Dr', city: 'Mount Vernon',
     accommodationCategory: 'C', sqft: 1500, marketValue: 200000, notes: '',
     billing: [
-      { to: ['pat.example'], address: { streetAddress: '101 Sample Dr', addressLocality: 'Mount Vernon', addressRegion: 'OH', postalCode: '43050' }, share: 60 },
-      { to: ['sam.example'], address: { streetAddress: '9 Elsewhere Ln', addressLocality: 'Columbus', addressRegion: 'OH', postalCode: '43215' }, share: 40 }
+      { address: 'PAT EXAMPLE\n101 Sample Dr\nMount Vernon OH 43050', share: 60 },
+      { address: 'SAM EXAMPLE\n9 Elsewhere Ln\nColumbus OH 43215', share: 40 }
     ]
   },
   { id: '66-00002.000', streetNo: '103', streetName: 'Sample', streetType: 'Dr', accommodationCategory: 'D', sqft: 1900, notes: 'corner unit' },

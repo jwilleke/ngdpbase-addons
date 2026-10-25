@@ -15,8 +15,8 @@
       "color": "#6c757d"
     },
     "accommodation-billing-read": {
-      "description": "Read a unit's billing parties: who its invoices go to, at which address, for what share. What the accounting add-on's invoice job asks",
-      "label": "Read units' billing parties",
+      "description": "Read a unit's billing: where its invoices go and for what share, and its owners by identity @id with their shares. What the accounting add-on's invoice job asks",
+      "label": "Read units' billing",
       "icon": "file-invoice",
       "color": "#6c757d"
     },
@@ -27,7 +27,7 @@
       "color": "#6c757d"
     },
     "accommodation-self": {
-      "description": "See your own units: those you hold a current ownership or occupancy entry for, with their owners, occupants and billing addresses. The add-on checks the entry on every request",
+      "description": "See your own units: those you hold a current ownership or occupancy entry for, with their owners, occupants and where the invoices go. The add-on checks the entry on every request",
       "label": "See your own accommodation",
       "icon": "house-user",
       "color": "#20c997"
@@ -44,17 +44,17 @@
       }
     },
     "accommodation-notices": {
-      "description": "Be told of residents' changes the board should know about: an owner's billing address, and later changes to occupants",
+      "description": "Be told of residents' changes the board should know about: a change to where a unit's invoices go, and changes to occupants",
       "label": "Get accommodation notices",
       "icon": "bell",
       "color": "#fd7e14"
     },
     "accommodation-billing-update": {
-      "description": "An owner changed the address of a unit's billing party they are on; who, the unit and the party, never the address",
+      "description": "The treasurer or an owner changed where a unit's invoices go; who, the unit and how many addresses, never the addresses",
       "grantable": false,
       "audit": {
         "on-failure": "refuse",
-        "description": "Billing address changed by an owner"
+        "description": "Billing changed by the treasurer or an owner"
       }
     },
     "accommodation-occupant-update": {

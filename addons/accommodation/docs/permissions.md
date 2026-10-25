@@ -31,7 +31,7 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 
 ### accommodation-read
 
-- __Lets a person:__ see every accommodation, its category and assessment, its billing parties, and its current and
+- __Lets a person:__ see every accommodation, its category and assessment, its billing, and its current and
   past owners and occupants with their contact details.
 - __Does not:__ change anything, or see a unit's files.
 - __Implies:__ access to personal data (names, addresses, phones, emergency contacts) for every unit.
@@ -42,9 +42,9 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 
 ### accommodation-billing-read
 
-- __Lets a person or a job:__ read a unit's billing parties, `ResidencyManager.billing(ctx, id, { on })`:
-  who its invoices go to, at which address, for what share. It is what the accounting add-on's invoice
-  job asks.
+- __Lets a person or a job:__ read a unit's billing, `ResidencyManager.billing(ctx, id, { on })`: where
+  its invoices go and for what share, and its owners on the date by identity `@id` with their shares.
+  It is what the accounting add-on's invoice job asks.
 - __Does not:__ show anything else about the unit or its people.
 - __Checked:__ by `ResidencyManager.billing` with the caller's context. Only then are the owners read,
   under the system context with a reason naming the caller and unit, and only billing fields are
@@ -66,7 +66,7 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 
 ### accommodation-manage
 
-- __Lets a person:__ create, change and remove accommodations, categories, billing parties and owner and
+- __Lets a person:__ create, change and remove accommodations, categories, billing entries and owner and
   occupant links, for every unit.
 - __Does not:__ by itself let a person see the units; pair it with `accommodation-read`.
 - __Implies:__ the power to change who is billed and for how much, and who holds the `owner` and
@@ -95,13 +95,13 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 - __Lets a person:__ see their own unit (assessment, billing, owners and occupants, and a link to the
   dues card the accounting add-on puts on their profile, which shows their balance) and change their
   own details. An owner also edits, adds and removes the unit's
-  occupants, and fills in the billing address.
+  occupants, and sets where the unit's invoices go.
 - __Own unit means:__ a unit they hold a current link to, as owner or occupant. The add-on checks that link
   on every request; the permission alone opens nothing.
 - __Checked:__ by `ResidencyManager.ownUnits` with the person's context, first the permission and then
   their own current entries. Only then are the unit's other people read, under the system context with
   a reason naming the person, and only the fields above are returned: co-owners' and occupants' names,
-  occupants' emails and the billing parties to an owner (settled with ngdpbase core, 2026-10-25).
+  occupants' emails and the billing entries to an owner (settled with ngdpbase core, 2026-10-25).
 - __Granted:__ to every user, through the role `vault-owner`, in the add-on's own policy. Never to site
   roles or a list of roles, never to an `authenticated` subject, and never by editing a core policy
   (operator, 2026-10-24, [ngdpbase#1539](https://github.com/jwilleke/ngdpbase/issues/1539)): it is a
@@ -110,8 +110,10 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   holder of `accommodation-review`.
 - __Implies:__ an owner sees their occupants' contact details. An occupant sees the owners' names.
 - __Recorded:__ each change made under it is recorded, and the reviewers get an advisory notice.
-- __Billing address:__ an owner's change applies at once, with an advisory notice to the Board of
-  Directors (operator, 2026-10-22).
+- __Billing:__ any current owner may change where the unit's invoices go, as the treasurer can: the
+  addresses, the shares, adding or removing one (operator, 2026-10-25,
+  [ngdpbase#2042](https://github.com/jwilleke/ngdpbase/issues/2042)). It applies at once, with an
+  advisory notice to the Board of Directors.
 
 ### accommodation-review
 

@@ -22,7 +22,9 @@ describe('ResidencyManager', () => {
       today: () => TEST_TODAY,
       // the caller here holds accommodation-billing-read; 'nobody' does not
       decide: async (c, { action }) => ({ permit: action === 'accommodation-billing-read' && (c as { username?: string }).username !== 'nobody', applicable: true, reason: 'test' }),
-      systemContext: (reason) => ({ username: 'system', roles: [], isAuthenticated: true, reason }) as unknown as ActorContext
+      systemContext: (reason) => ({ username: 'system', roles: [], isAuthenticated: true, reason }) as unknown as ActorContext,
+      // every account's identity record, by the username; 'no.identity' has none
+      identities: { find: async (_c, username) => (username === 'no.identity' ? null : { id: `urn:uuid:${username}` }), update: async () => undefined }
     });
   }
 
@@ -88,61 +90,74 @@ describe('ResidencyManager', () => {
     await expect(m.withoutOwner(ctx, ids, { on: 'soon' })).rejects.toThrow('not a date');
   });
 
-  test('billing: one invoice per billing party, as kept on the unit', async () => {
+  test('billing: where the invoices go, as kept on the unit, and who owes, each owner by @id with their share', async () => {
     const m = open();
-    expect(await m.billing(ctx, '66-00001.000')).toEqual([
-      { to: [{ username: 'pat.example', name: 'Pat Example', email: 'pat@example.org' }], name: 'Pat Example',
-        address: { streetAddress: '101 Sample Dr', addressLocality: 'Mount Vernon', addressRegion: 'OH', postalCode: '43050' }, share: 60 },
-      { to: [{ username: 'sam.example', name: 'Sam Example', email: null }], name: 'Sam Example',
-        address: { streetAddress: '9 Elsewhere Ln', addressLocality: 'Columbus', addressRegion: 'OH', postalCode: '43215' }, share: 40 }
-    ]);
+    expect(await m.billing(ctx, '66-00001.000')).toEqual({
+      billing: [
+        { address: 'PAT EXAMPLE\n101 Sample Dr\nMount Vernon OH 43050', share: 60 },
+        { address: 'SAM EXAMPLE\n9 Elsewhere Ln\nColumbus OH 43215', share: 40 }
+      ],
+      owners: [{ '@id': 'urn:uuid:pat.example', share: 50 }, { '@id': 'urn:uuid:sam.example', share: 50 }]
+    });
   });
 
   test('billing is a door: decided with the caller, then read as the system naming them; refused without the permission', async () => {
     const m = open();
     await m.billing(ctx, '66-00001.000');
-    expect(asked.length > 0 && asked.every(c => (c as { reason?: string }).reason === 'accommodation: billing parties of unit 66-00001.000, for treasurer')).toBe(true);
+    expect(asked.length > 0 && asked.every(c => (c as { reason?: string }).reason === 'accommodation: billing of unit 66-00001.000, for treasurer')).toBe(true);
     asked = [];
     const job = { username: 'nobody', roles: [], isAuthenticated: false } as unknown as ActorContext;
     await expect(m.billing(job, '66-00001.000')).rejects.toMatchObject({ name: 'AccommodationRefusedError', permission: 'accommodation-billing-read' });
     expect(asked).toEqual([]); // nobody is read before the door says yes
   });
 
-  test('billing with no parties kept: every current owner, one invoice, at the unit address, 100%', async () => {
+  test('billing with no entries kept: one invoice to the owners at the unit address, 100%, as text', async () => {
     const m = open();
-    const [party, ...rest] = await m.billing(ctx, '66-00002.000');
-    expect(rest).toEqual([]);
-    expect(party).toMatchObject({ name: 'kim.both and Sam Example', share: 100, address: { streetAddress: '103 Sample Dr' } });
+    expect(await m.billing(ctx, '66-00002.000')).toEqual({
+      billing: [{ address: '103 Sample Dr', share: 100 }],
+      owners: [{ '@id': 'urn:uuid:kim.both', share: 50 }, { '@id': 'urn:uuid:sam.example', share: 50 }]
+    });
   });
 
-  test('joint owners at one address: one invoice naming both', async () => {
-    const m = open([{ id: '66-00002.000', address: { streetAddress: '103 Sample Dr' },
-      billing: [{ to: ['kim.both', 'sam.example'], address: { streetAddress: '103 Sample Dr' }, share: 100 }] }]);
-    const parties = await m.billing(ctx, '66-00002.000');
-    expect(parties.map(p => [p.name, p.share])).toEqual([['kim.both and Sam Example', 100]]);
+  test('a single billing entry may leave out its share: it is 100%', async () => {
+    const m = open([{ id: '66-00002.000', billing: [{ address: 'KIM BOTH & SAM EXAMPLE\n1 Main St' }] }]);
+    expect((await m.billing(ctx, '66-00002.000')).billing).toEqual([{ address: 'KIM BOTH & SAM EXAMPLE\n1 Main St', share: 100 }]);
   });
 
   test.each([
-    [[{ to: ['pat.example'], address: { streetAddress: 'A' }, share: 60 }], 'add up to 60%, not 100%'],
-    [[{ to: ['pat.example'], address: { streetAddress: 'A' }, share: 70 }, { to: ['sam.example'], address: { streetAddress: 'B' }, share: 40 }], 'add up to 110%'],
-    [[{ to: ['old.owner'], address: { streetAddress: 'A' }, share: 100 }], 'names old.owner, who is not a current owner'],
-    [[{ to: [], address: { streetAddress: 'A' }, share: 100 }], 'must name at least one owner'],
-    [[{ to: ['pat.example'], address: {}, share: 100 }], 'must have a streetAddress'],
-    [[], 'must be a list of billing parties']
+    [[{ address: 'A', share: 60 }], 'billing shares add up to 60%, not 100%'],
+    [[{ address: 'A', share: 70 }, { address: 'B', share: 40 }], 'add up to 110%'],
+    [[{ address: 'A', share: 50 }, { address: 'B' }], 'billing entry 2: the share must be a percent above 0'],
+    [[{ address: '  ', share: 100 }], 'billing entry 1 has no address'],
+    [[{ to: ['pat.example'], address: { streetAddress: 'A' }, share: 100 }], 'earlier shape and has not been converted'],
+    [[], 'must be a list of billing entries']
   ])('billing refuses rather than bill wrongly: %o', async (billing, message) => {
     const m = open([{ id: '66-00001.000', billing }]);
     await expect(m.billing(ctx, '66-00001.000')).rejects.toThrow(message);
   });
 
-  test('billing on a past date bills who owned it then', async () => {
-    const m = open([{ id: '66-00001.000', address: { streetAddress: '101 Sample Dr' } }]);
-    expect((await m.billing(ctx, '66-00001.000', { on: '2012-01-01' })).map(p => p.name)).toEqual(['Old Owner']);
+  test("billing refuses when the owners' shares do not add up to 100, or an owner has no identity record", async () => {
+    const one = (share: number, username = 'a') => ({ username, ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: 'current', share }] });
+    const make = (users: unknown[]) => new ResidencyManager({
+      users: async () => users as never, accommodation: () => ({ id: 'p1', address: { streetAddress: '1 Main St' } }), today: () => TEST_TODAY,
+      decide: async () => ({ permit: true, applicable: true, reason: 'test' }),
+      systemContext: (reason) => ({ username: 'system', reason }) as unknown as ActorContext,
+      identities: { find: async (_c, username) => (username === 'no.identity' ? null : { id: `urn:uuid:${username}` }), update: async () => undefined }
+    });
+    await expect(make([one(60)]).billing(ctx, 'p1')).rejects.toThrow('owner shares add up to 60%, not 100%');
+    await expect(make([one(100, 'no.identity')]).billing(ctx, 'p1')).rejects.toThrow('an owner has no identity record');
+    expect((await make([one(100)]).billing(ctx, 'p1')).owners).toEqual([{ '@id': 'urn:uuid:a', share: 100 }]);
   });
 
-  test('billing refuses a unit with no owner, or no address to bill', async () => {
+  test('billing on a past date: who owned it then', async () => {
+    const m = open([{ id: '66-00001.000', address: { streetAddress: '101 Sample Dr' } }]);
+    expect((await m.billing(ctx, '66-00001.000', { on: '2012-01-01' })).owners).toEqual([{ '@id': 'urn:uuid:old.owner', share: 100 }]);
+  });
+
+  test('billing refuses a unit with no owner, or nowhere to send it', async () => {
     const m = open([{ id: '66-00003.000' }, { id: '66-00001.000' }]);
     await expect(m.billing(ctx, '66-00003.000')).rejects.toThrow('no current owner to bill');
-    await expect(m.billing(ctx, '66-00001.000')).rejects.toThrow('no unit address to bill');
+    await expect(m.billing(ctx, '66-00001.000')).rejects.toThrow('no billing entries and no unit address to bill');
   });
 
   test('no user source is no owners', async () => {

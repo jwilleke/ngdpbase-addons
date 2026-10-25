@@ -116,18 +116,19 @@ sees none, and is pointed at the Occupancy information form.
 
 - Each unit shows its address, its category and assessment (in the site's currency, through core's
   `formatMoney`), its current owners by name, and its occupants.
-- An owner also sees the occupants' emails and the unit's billing parties. An occupant sees the
+- An owner also sees the occupants' emails and where the unit's invoices go. An occupant sees the
   owners' names only.
 - No balance: bills, payments and balance are on the dues card the accounting add-on puts on the
   person's profile, which the page links to (ngdp-accounting-addons D-044).
-- __Billing address__ ([#38](https://github.com/jwilleke/ngdpbase-addons/issues/38)): an owner changes
-  the address of a billing party they are on. It applies at once (operator, 2026-10-22). A unit that
-  keeps no parties has one, all its current owners, and setting its address keeps that party.
-  `ResidencyManager.setBillingAddress` decides with the owner's context (`accommodation-self`, a
-  current owner, on that party). It records `accommodation-billing-update` as the owner first
-  (on-failure `refuse`; the field names, never the address), has `AccommodationManager` write it under
-  the system context with a reason naming the owner, then tells the holders of
-  `accommodation-notices` (admins on day one; a site grants its board).
+- __Billing__ ([ngdpbase#2042](https://github.com/jwilleke/ngdpbase/issues/2042)): any current owner
+  of the unit may change where its invoices go, everything the treasurer can: type each address, set
+  the shares, add or remove an address (operator, 2026-10-25). It applies at once.
+  `ResidencyManager.setBilling` decides with the caller's context (`accommodation-manage` for the
+  treasurer, else `accommodation-self` and a current owner of the unit) and checks the entries before
+  anything is written. It records `accommodation-billing-update` as the caller first (on-failure
+  `refuse`; counts, never the addresses), has `AccommodationManager` write it under the system context
+  with a reason naming the caller, then tells the holders of `accommodation-notices` (admins on day
+  one; a site grants its board).
 - An admin's edit and an owner's billing change at the same moment both stand: every
   `AccommodationManager` change runs from its read to its save inside one key of core's
   `host.keyedSerial()` (ngdpbase 5.30.1, [#39](https://github.com/jwilleke/ngdpbase-addons/issues/39)).
@@ -183,28 +184,46 @@ with no current entry is removed.
 
 ## Billing
 
-One invoice per billing address. The accommodation keeps its billing parties:
+Who owes and where the invoice goes are kept apart (operator, 2026-10-25,
+[ngdpbase#2042](https://github.com/jwilleke/ngdpbase/issues/2042)).
+
+__Who owes__ is always the unit's owners on the invoice date, each with their share of the unit (the
+`share` on their ownership entry). Owner shares add up to exactly 100. Every owner is an account.
+
+__Where invoices go__ is the unit's `billing` list. Each entry is an address typed the way it goes
+on the envelope, names first, and that entry's share of the invoice:
 
 ```json
 "billing": [
-  { "to": ["jim.willeke", "molly.willeke"], "address": { "streetAddress": "21 Fairway Dr", "addressLocality": "Mount Vernon", "addressRegion": "OH", "postalCode": "43050" }, "share": 100 }
+  { "address": "MOLLY E WILLEKE & JAMES S WILLEKE\n123 Main St\nAkron OH 44333", "share": 100 }
 ]
 ```
 
+- The address is free text, several lines. It names no account.
+- The shares add up to exactly 100. A single entry may leave its share out: it is 100.
+- A unit with no `billing` has one entry: its own address (its `address` field, else its county
+  street fields), 100%.
+- The treasurer sets them on the unit's owners and occupants page; an owner on their own page, with
+  the same rights.
+
 `ResidencyManager.billing(ctx, id, { on })` is a door: it needs `accommodation-billing-read` (admins;
 a site, or the accounting add-on's policy, grants its invoice job), decided with the caller's context.
-The owners are then read under the system context, with a reason naming the caller and unit, and only
-billing fields come back.
+The owners are then read under the system context, with a reason naming the caller and unit. It
+returns:
 
-- `to`: the owners named on the invoice; each must be a current owner.
-- `address`: where it goes (schema.org PostalAddress).
-- `share`: that party's percent of the assessment; the parties add up to exactly 100.
-- An accommodation with no `billing` has one party: every current owner, at the accommodation's own
-  address (its `address` field, else its county street fields), 100%.
+```json
+{ "billing": [{ "address": "…", "share": 100 }], "owners": [{ "@id": "urn:uuid:…", "share": 50 }] }
+```
 
-`ResidencyManager.billing(ctx, id, { on })` returns the parties with owners' names filled in, one per
-invoice. It refuses, naming the accommodation, rather than bill wrongly: a party naming someone who is
-not a current owner, shares that do not add up to 100, an accommodation with no owner or no address.
+Owners come by identity `@id`, ordered by it, never by username; accounting reads names through
+IdentityManager. No names are copied in. It refuses, naming the accommodation, rather than bill
+wrongly: no current owner, owner or billing shares that do not add up to 100, nowhere to send it, an
+owner with no identity record, or billing still in the earlier shape.
+
+__The earlier shape__ (entries naming owners in `to`, with a structured address) is converted once at
+start-up, under the system context, one write per unit: the owners' names, joined with " & ", above
+the address lines. A unit naming a username with no account is left as it is, for the treasurer to fix
+on the unit's page; the log gives counts only.
 
 ## Categories
 
