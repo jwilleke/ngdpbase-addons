@@ -113,8 +113,11 @@ export interface ResidencyChanges {
    * inside the account's own key, and returns the fields to write, or undefined for none.
    */
   updateUser: (username: string, update: (current: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>, ctx: ActorContext) => Promise<unknown>;
-  /** UserManager.createUser with no password, under the system context, once the owner's door has decided (#37). */
-  createUser?: (systemCtx: ActorContext, user: { username: string; email: string; displayName: string }) => Promise<{ username: string }>;
+  /**
+   * UserManager.createUser with no password, once a door here has decided: under the system context
+   * for an owner's occupant (#37), as the admin for the admin page's new person.
+   */
+  createUser?: (ctx: ActorContext, user: { username: string; email?: string; displayName: string }) => Promise<{ username: string }>;
   /** AuthManager.inviteUser, under the system context: 'sent', or why nothing was sent. */
   inviteUser?: (systemCtx: ActorContext, username: string) => Promise<{ outcome: string; reason?: string }>;
   /**
@@ -184,6 +187,11 @@ function memberOf(u: UserRecord): UnitMember {
 function parcelOf(raw: unknown, type: LinkType): string | undefined {
   const value = raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[type === 'owner' ? 'typeOfGood' : 'accommodation'] : undefined;
   return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/** A username made from a person's name: its words, lower case, joined with dots ("Matthew K Weis" is matthew.k.weis). */
+function usernameFrom(name: string): string {
+  return name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).join('.');
 }
 
 /** The names of the fields `entry` gives a different value from `raw`, sorted. */
@@ -608,6 +616,52 @@ export default class ResidencyManager {
     }
     await changes.notify?.('Occupant added by an owner', `An owner of unit ${id} added an occupant${matches.length === 0 ? ' with a new account' : ''}.`);
     return { username, created: matches.length === 0, ...(invitation ? { invitation } : {}) };
+  }
+
+  /**
+   * The admin page adds an owner or occupant who has no account yet (operator, 2026-10-25), in one
+   * save: the account is made with no password, then the entry is added. Decided with the caller's
+   * context: `accommodation-manage`, then `user-create` for the account (core's UserManager leaves
+   * that to its caller, and records the account itself). Everything is checked before anything is
+   * written: a name, a well-formed email if one is given (none already on an account), a username
+   * free to use (given, else made from the name), and the entry. An invitation goes only when asked
+   * and there is an email. The entry is added through changeLink as the caller, recorded there. If
+   * the entry then fails, the account stays, and choosing it adds the entry.
+   */
+  async addNewPerson(ctx: ActorContext, link: UnitLink, person: { name: string; email?: string; username?: string; invite?: boolean }):
+    Promise<{ username: string; invitation?: { outcome: string; reason?: string } }> {
+    const changes = this.changes;
+    if (!changes?.createUser || !changes.inviteUser) throw new Error('ResidencyManager was started without its account door');
+    for (const action of ['accommodation-manage', 'user-create']) {
+      const decision = await changes.decide(ctx, { action });
+      if (!decision.permit) throw new AccommodationRefusedError(action, decision);
+    }
+    const name = person.name.trim();
+    if (!name) throw new LinkChangeRefusedError('a new person needs a name');
+    const problem = this.checkEntry(link);
+    if (problem) throw new LinkChangeRefusedError(problem);
+    if (link.type === 'owner' && !(typeof link.share === 'number' && link.share > 0 && link.share <= 100)) {
+      throw new LinkChangeRefusedError('an owner needs a share, a percent above 0 and at most 100');
+    }
+    const email = (person.email ?? '').trim();
+    if (email && !/^[^\s@]+@[^\s@]+$/.test(email)) throw new LinkChangeRefusedError(`${email} is not an email address`);
+    const users = await this.users(ctx);
+    const holder = email ? users.find(u => (u.email ?? '').trim().toLowerCase() === email.toLowerCase()) : undefined;
+    if (holder) throw new LinkChangeRefusedError(`${holder.username} already has the email ${email}; choose them under Person instead`);
+    const username = (person.username ?? '').trim() || usernameFrom(name);
+    if (!/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(username)) throw new LinkChangeRefusedError(`give a username for ${name} (letters, digits, . _ -)`);
+    if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+      throw new LinkChangeRefusedError(`the username ${username} is taken; choose that person under Person, or give another username`);
+    }
+
+    await changes.createUser(ctx, { username, ...(email ? { email } : {}), displayName: name });
+    const invitation = person.invite && email ? await changes.inviteUser(ctx, username) : undefined;
+    try {
+      await this.changeLink(ctx, username, { op: 'add', link });
+    } catch (err) {
+      throw new LinkChangeRefusedError(`the account ${username} was made, but the entry was not added (${err instanceof Error ? err.message : String(err)}); choose ${username} under Person to add it`);
+    }
+    return { username, ...(invitation ? { invitation } : {}) };
   }
 
   /** Every account, by username, as the add-on's pages offer them: display name and email. */

@@ -287,3 +287,71 @@ describe('ResidencyManager.changeLink (#28)', () => {
     });
   });
 });
+
+describe('ResidencyManager.addNewPerson (operator, 2026-10-25)', () => {
+  const ADMIN_GRANTS: Record<string, string[]> = { treasurer: ['accommodation-manage', 'user-create'], clerk: ['accommodation-manage'] };
+  const LINK = { parcel: '66-00003.000', type: 'owner' as const, from: '2016-11-23', to: 'current', share: 100 };
+
+  function open(options: { entryFails?: boolean } = {}) {
+    let users: UserRecord[] = structuredClone(SAMPLE_USERS).map(u => (u.username === 'pat.example' ? { ...u, email: 'pat@example.org' } : u));
+    const made: Array<[unknown, Record<string, unknown>]> = [];
+    const invited: string[] = [];
+    const m = new ResidencyManager({
+      users: async () => structuredClone(users),
+      accommodation: (id) => SAMPLE_ACCOMMODATIONS.find(u => u.id === id),
+      today: () => TEST_TODAY,
+      changes: {
+        host,
+        decide: async (c, { action }) => ({ permit: (ADMIN_GRANTS[(c as { username?: string }).username ?? ''] ?? []).includes(action), applicable: true, reason: 'test' }),
+        recordAudit: async () => undefined,
+        updateUser: async (username, update) => {
+          if (options.entryFails) throw new Error('disk full');
+          const fields = await update(structuredClone(users.find(u => u.username === username)!) as Record<string, unknown>);
+          if (fields) users = users.map(u => (u.username === username ? { ...u, ...fields } : u));
+        },
+        createUser: async (ctx, user) => { made.push([ctx, user]); users = [...users, { username: user.username, displayName: user.displayName, ...(user.email ? { email: user.email } : {}) }]; return { username: user.username }; },
+        inviteUser: async (_ctx, username) => { invited.push(username); return { outcome: 'sent' }; }
+      }
+    });
+    return { m, made, invited, ownership: (u: string) => users.find(x => x.username === u)?.ownership };
+  }
+
+  test('makes the account as the caller, with no password and no invitation, then adds the entry', async () => {
+    const t = open();
+    expect(await t.m.addNewPerson(treasurer, LINK, { name: 'Matthew K Weis' })).toEqual({ username: 'matthew.k.weis' });
+    expect(t.made).toEqual([[treasurer, { username: 'matthew.k.weis', displayName: 'Matthew K Weis' }]]);
+    expect(t.invited).toEqual([]);
+    expect(t.ownership('matthew.k.weis')).toEqual([{ typeOfGood: '66-00003.000', ownedFrom: '2016-11-23', ownedThrough: 'current', share: 100 }]);
+  });
+
+  test('invites only when asked and there is an email', async () => {
+    const t = open();
+    await t.m.addNewPerson(treasurer, LINK, { name: 'No Mail', invite: true });
+    expect(t.invited).toEqual([]);
+    expect(await t.m.addNewPerson(treasurer, { ...LINK, parcel: '66-00002.000', share: 50 }, { name: 'Ann Lee', email: 'ann@example.org', invite: true }))
+      .toEqual({ username: 'ann.lee', invitation: { outcome: 'sent' } });
+    expect(t.invited).toEqual(['ann.lee']);
+  });
+
+  test.each([
+    [{ name: ' ' }, LINK, 'a new person needs a name'],
+    [{ name: 'X Y', email: 'nope' }, LINK, 'nope is not an email address'],
+    [{ name: 'X Y', email: 'PAT@example.org' }, LINK, 'pat.example already has the email PAT@example.org'],
+    [{ name: 'Pat Example', username: 'pat.example' }, LINK, 'the username pat.example is taken'],
+    [{ name: 'X Y' }, { ...LINK, share: Number.NaN }, 'an owner needs a share'],
+    [{ name: 'X Y' }, { ...LINK, parcel: '99-99999.000' }, 'no accommodation 99-99999.000']
+  ])('refuses %o before anything is made', async (person, link, message) => {
+    const t = open();
+    await expect(t.m.addNewPerson(treasurer, link, person)).rejects.toThrow(message);
+    expect(t.made).toEqual([]);
+  });
+
+  test('needs accommodation-manage and user-create; an entry that then fails says the account stays', async () => {
+    const t = open();
+    await expect(t.m.addNewPerson(contextFor('clerk'), LINK, { name: 'X Y' })).rejects.toMatchObject({ name: 'AccommodationRefusedError', permission: 'user-create' });
+    await expect(t.m.addNewPerson(contextFor('board'), LINK, { name: 'X Y' })).rejects.toBeInstanceOf(AccommodationRefusedError);
+    expect(t.made).toEqual([]);
+    const f = open({ entryFails: true });
+    await expect(f.m.addNewPerson(treasurer, LINK, { name: 'X Y' })).rejects.toThrow('the account x.y was made, but the entry was not added');
+  });
+});

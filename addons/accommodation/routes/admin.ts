@@ -129,26 +129,39 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
     })();
   });
 
+  /**
+   * One accommodation's page. `draft` is an add the admin typed and was refused, shown again so
+   * nothing has to be typed twice; it goes in the page, never in the URL.
+   */
+  async function renderUnit(req: Request, res: Response, ctx: ReturnType<typeof ApiContext.from>, parcel: string,
+    shown: { flash: string; reason: string; draft?: Record<string, string> }): Promise<void> {
+    const { accommodations, residency } = managers();
+    const actor = ctx.getActor();
+    const { entries, shareProblems } = await residency.unitEntries(actor, parcel);
+    res.render('accommodation-resident-unit', {
+      ...(await engine.templateData?.(req)),
+      currentUser: req.userContext,
+      parcel,
+      label: unitLabel(accommodations, parcel),
+      county: countyRecordOf(accommodations.get(parcel)),
+      billing: billingForForm(accommodations.get(parcel), suggestedBilling(accommodations.get(parcel))),
+      entries,
+      shareProblems,
+      people: await residency.people(actor),
+      draft: shown.draft ?? {},
+      flash: shown.flash,
+      reason: shown.reason
+    });
+  }
+
   router.get('/residents/:parcel', (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine as never);
         await ctx.requirePermission('accommodation-read');
-        const { accommodations, residency } = managers();
         const parcel = String(req.params['parcel']);
-        if (!accommodations.get(parcel)) { res.status(404).send('No such accommodation'); return; }
-        const actor = ctx.getActor();
-        const { entries, shareProblems } = await residency.unitEntries(actor, parcel);
-        res.render('accommodation-resident-unit', {
-          ...(await engine.templateData?.(req)),
-          currentUser: req.userContext,
-          parcel,
-          label: unitLabel(accommodations, parcel),
-          county: countyRecordOf(accommodations.get(parcel)),
-          billing: billingForForm(accommodations.get(parcel), suggestedBilling(accommodations.get(parcel))),
-          entries,
-          shareProblems,
-          people: await residency.people(actor),
+        if (!managers().accommodations.get(parcel)) { res.status(404).send('No such accommodation'); return; }
+        await renderUnit(req, res, ctx, parcel, {
           flash: typeof req.query['flash'] === 'string' ? req.query['flash'] : '',
           reason: typeof req.query['reason'] === 'string' ? req.query['reason'] : ''
         });
@@ -164,11 +177,19 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
       const ctx = ApiContext.from(req, engine as never);
       const parcel = String(req.params['parcel']);
       const back = `/addons/accommodation/residents/${encodeURIComponent(parcel)}`;
+      const body = (req.body ?? {}) as Record<string, unknown>;
       try {
         await ctx.requirePermission('accommodation-manage');
-        const body = (req.body ?? {}) as Record<string, unknown>;
         const change = changeFrom(body, parcel);
         if (typeof change === 'string') { res.redirect(`${back}?flash=refused&reason=${encodeURIComponent(change)}`); return; }
+        // An add for someone with no account yet: the account and the entry in one save.
+        if (change.op === 'add' && text(body, 'username') === '' && text(body, 'newName') !== '') {
+          const made = await managers().residency.addNewPerson(ctx.getActor(), change.link, {
+            name: text(body, 'newName'), email: text(body, 'newEmail'), username: text(body, 'newUsername'), invite: text(body, 'invite') === 'yes'
+          });
+          res.redirect(`${back}?flash=${made.invitation ? 'saved-invited' : 'saved-new'}`);
+          return;
+        }
         const result = await managers().residency.changeLink(ctx.getActor(), text(body, 'username'), change);
         res.redirect(afterChange(parcel, result));
       } catch (err) {
@@ -178,6 +199,12 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
             await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
           }
           if ((err as Error).name === 'LinkChangeRefusedError') {
+            if (text(body, 'op') === 'add') {
+              // Shown again with what was typed: nothing to type twice, and nothing personal in the URL.
+              const draft = Object.fromEntries(['username', 'type', 'from', 'to', 'share', 'newName', 'newEmail', 'newUsername', 'invite'].map(k => [k, text(body, k)]));
+              await renderUnit(req, res, ctx, parcel, { flash: 'refused', reason: (err as Error).message, draft });
+              return;
+            }
             res.redirect(`${back}?flash=refused&reason=${encodeURIComponent((err as Error).message)}`);
             return;
           }

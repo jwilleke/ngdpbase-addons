@@ -7,6 +7,10 @@
 
   <% if (flash === 'saved') { %>
     <div class="alert alert-success" data-testid="flash-saved">Saved. The owner and occupant roles follow it when the roles job has run (Admin → Scheduled Jobs).</div>
+  <% } else if (flash === 'saved-new') { %>
+    <div class="alert alert-success" data-testid="flash-saved-new">Saved, with a new account (no password, no invitation sent). The roles follow when the roles job has run.</div>
+  <% } else if (flash === 'saved-invited') { %>
+    <div class="alert alert-success" data-testid="flash-saved-invited">Saved, with a new account. An invitation to set it up was sent, if this site sends email.</div>
   <% } else if (flash === 'billing-saved') { %>
     <div class="alert alert-success" data-testid="flash-billing-saved">Billing saved.</div>
   <% } else if (flash === 'unchanged') { %>
@@ -111,38 +115,65 @@
   <% } %>
 
   <h4 class="mt-4">Add an entry</h4>
-  <form method="POST" action="<%= action %>" class="row g-2 align-items-end" data-testid="add-entry">
+  <% var d = draft || {}; %>
+  <form method="POST" action="<%= action %>" data-testid="add-entry">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
     <input type="hidden" name="op" value="add">
-    <div class="col-auto">
-      <label class="form-label small" for="add-username">Person (username)</label>
-      <input type="text" id="add-username" name="username" class="form-control form-control-sm" list="people" required>
-      <datalist id="people">
-        <% people.forEach(function (p) { %><option value="<%= p.username %>"><%= p.name %></option><% }) %>
-      </datalist>
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small" for="add-username">Person with an account</label>
+        <input type="text" id="add-username" name="username" class="form-control form-control-sm" list="people" value="<%= d.username || '' %>" placeholder="Start typing a name">
+        <datalist id="people">
+          <% people.forEach(function (p) { %><option value="<%= p.username %>"><%= p.name %></option><% }) %>
+        </datalist>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small" for="add-type">As</label>
+        <select id="add-type" name="type" class="form-select form-select-sm">
+          <option value="owner"<%= d.type === 'occupant' ? '' : ' selected' %>>owner</option>
+          <option value="occupant"<%= d.type === 'occupant' ? ' selected' : '' %>>occupant</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small" for="add-from">From</label>
+        <input type="date" id="add-from" name="from" class="form-control form-control-sm" value="<%= d.from || (county ? county.lastSaleDate : '') %>" required>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small" for="add-to">Through</label>
+        <input type="text" id="add-to" name="to" class="form-control form-control-sm" value="<%= d.to || 'current' %>" required>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small" for="add-share">Share % (owners)</label>
+        <input type="number" id="add-share" name="share" class="form-control form-control-sm" min="0.01" max="100" step="any" value="<%= d.share || '100' %>">
+      </div>
     </div>
-    <div class="col-auto">
-      <label class="form-label small" for="add-type">As</label>
-      <select id="add-type" name="type" class="form-select form-select-sm">
-        <option value="owner">owner</option>
-        <option value="occupant">occupant</option>
-      </select>
-    </div>
-    <div class="col-auto">
-      <label class="form-label small" for="add-from">From</label>
-      <input type="date" id="add-from" name="from" class="form-control form-control-sm" required>
-    </div>
-    <div class="col-auto">
-      <label class="form-label small" for="add-to">Through</label>
-      <input type="text" id="add-to" name="to" class="form-control form-control-sm" value="current" required>
-    </div>
-    <div class="col-auto">
-      <label class="form-label small" for="add-share">Share % (owners)</label>
-      <input type="number" id="add-share" name="share" class="form-control form-control-sm" min="0.01" max="100" step="any" value="100">
-    </div>
-    <div class="col-auto"><button type="submit" class="btn btn-sm btn-primary">Add</button></div>
+    <details class="mt-2"<%= d.newName ? ' open' : '' %>>
+      <summary class="small">Someone with no account yet</summary>
+      <div class="row g-2 align-items-end mt-1">
+        <div class="col-md-3">
+          <label class="form-label small" for="add-new-name">Name</label>
+          <input type="text" id="add-new-name" name="newName" class="form-control form-control-sm" value="<%= d.newName || '' %>">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small" for="add-new-email">Email (if known)</label>
+          <input type="email" id="add-new-email" name="newEmail" class="form-control form-control-sm" value="<%= d.newEmail || '' %>">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small" for="add-new-username">Username (optional)</label>
+          <input type="text" id="add-new-username" name="newUsername" class="form-control form-control-sm" value="<%= d.newUsername || '' %>" placeholder="made from the name">
+        </div>
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="add-invite" name="invite" value="yes"<%= d.invite === 'yes' ? ' checked' : '' %>>
+            <label class="form-check-label small" for="add-invite">Email them an invitation to set up the account</label>
+          </div>
+        </div>
+      </div>
+      <p class="small text-muted mb-0 mt-1">Leave "Person with an account" empty and fill these in: an account is made with no password, and the entry is added, in one save. No invitation is sent unless you tick the box and give an email.</p>
+    </details>
+    <button type="submit" class="btn btn-sm btn-primary mt-2">Add</button>
   </form>
-  <p class="small text-muted mt-1">Through is a date YYYY-MM-DD, or <code>current</code>. Share is ignored for an occupant. To make an occupant an owner, or back, change <em>As</em> under "Correct or remove" (an owner needs a share).</p>
+  <p class="small text-muted mt-1">Through is a date YYYY-MM-DD, or <code>current</code>. From starts as the county's newest sale date. Share is ignored for an occupant. To make an occupant an owner, or back, change <em>As</em> under "Correct or remove" (an owner needs a share).</p>
 </div>
 
 <%- include('footer') %>

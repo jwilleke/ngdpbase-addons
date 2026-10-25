@@ -77,7 +77,14 @@ every accommodation with its current owners and occupants, and the entries that 
 Open an accommodation to change its entries, which needs `accommodation-manage`:
 
 - __Add__ an entry: the person (a username), owner or occupant, from, through (`current` or a date), and
-  an owner's share. For example "Pat Example owns 66-00001.000 from 2015-06-01".
+  an owner's share. For example "Pat Example owns 66-00001.000 from 2015-06-01". From starts as the
+  county's newest sale date.
+- __Add someone with no account yet__ in the same save (operator, 2026-10-25):
+  `ResidencyManager.addNewPerson` needs `accommodation-manage` and `user-create`. It checks everything
+  first (a name, an email if given and not already on an account, a free username, made from the name
+  when none is given, and the entry), then makes the account as the admin with no password, then adds
+  the entry through changeLink. An invitation goes only when the box is ticked and there is an email. A
+  refused add comes back with what was typed, kept in the page and never in the URL.
 - __End__ a current entry on its last day: "Lee Renter moved out 2026-09-30".
 - __Correct__ an entry, a malformed one too: that is how one `linkProblems` names is fixed. Fields the
   page does not show (such as `acquiredFrom`) are kept. Changing its type moves it between
