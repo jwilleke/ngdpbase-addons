@@ -119,7 +119,8 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
               const [nb, ...sb] = (b.address?.streetAddress ?? b.id).split(' ');
               return sa.join(' ').localeCompare(sb.join(' ')) || (Number(na) || 0) - (Number(nb) || 0) || a.id.localeCompare(b.id);
             }),
-          problems: await residency.linkProblems(actor)
+          problems: await residency.linkProblems(actor),
+          unbilled: residency.withoutBilling(units.map(u => u.id))
         });
       } catch (err) {
         if (err instanceof ApiError) { sendApiError(res, err, 'page'); return; }

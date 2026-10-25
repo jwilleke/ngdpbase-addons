@@ -13,6 +13,13 @@
     </div>
   <% } %>
 
+  <% if (unbilled.length > 0) { %>
+    <div class="alert alert-danger" data-testid="unbilled">
+      <strong><%= unbilled.length %> accommodation(s) have no usable billing address</strong> and cannot be invoiced until one is saved.
+      Open each one marked <span class="badge bg-danger">no billing address</span> below and save its billing.
+    </div>
+  <% } %>
+
   <% if (units.length === 0) { %>
     <div class="alert alert-info">No accommodations yet.</div>
   <% } else { %>
@@ -22,7 +29,7 @@
         <tbody>
           <% units.forEach(function (unit) { %>
             <tr>
-              <td><a href="/addons/accommodation/residents/<%= encodeURIComponent(unit.id) %>"><%= unit.label %></a></td>
+              <td><a href="/addons/accommodation/residents/<%= encodeURIComponent(unit.id) %>"><%= unit.label %></a><% if (unbilled.indexOf(unit.id) !== -1) { %> <span class="badge bg-danger">no billing address</span><% } %></td>
               <td><% if (unit.owners.length > 0) { %><%= unit.owners.map(function (o) { return o.name; }).join(', ') %><% } else { %><span class="text-danger">No current owner</span><% } %></td>
               <td><% if (unit.occupants.length > 0) { %><%= unit.occupants.map(function (o) { return o.name; }).join(', ') %><% } else { %><span class="text-muted">None</span><% } %></td>
             </tr>

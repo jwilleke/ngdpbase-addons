@@ -279,6 +279,16 @@ export default class ResidencyManager {
     return { billing, owners: [...owners].sort(([a], [b]) => a.localeCompare(b)).map(([at, share]) => ({ '@id': at, share })) };
   }
 
+  /**
+   * The units that cannot be billed for where their invoices go: no billing entries, or entries that
+   * do not read (ngdpbase#2042). For the treasurer to fix before a dues run, not at it.
+   */
+  withoutBilling(ids: string[]): string[] {
+    return ids.filter(id => {
+      try { return !readBilling(id, this.accommodation(id)?.billing); } catch { return true; }
+    });
+  }
+
   /** Where the unit's invoices go: its billing entries. Throws when it has none, or they do not read. */
   private billingEntries(id: string): BillingEntry[] {
     const stored = readBilling(id, this.accommodation(id)?.billing);

@@ -151,6 +151,11 @@ describe('ResidencyManager', () => {
     expect((await m.billing(ctx, '66-00001.000', { on: '2012-01-01' })).owners).toEqual([{ '@id': 'urn:uuid:old.owner', share: 100 }]);
   });
 
+  test('withoutBilling: the units with no billing entries, or entries that do not read', () => {
+    const m = open([{ id: 'a', billing: [{ address: 'A' }] }, { id: 'b' }, { id: 'c', billing: [{ address: 'A', share: 60 }] }]);
+    expect(m.withoutBilling(['a', 'b', 'c', 'gone'])).toEqual(['b', 'c', 'gone']);
+  });
+
   test('billing refuses a unit with no owner', async () => {
     const m = open([{ id: '66-00003.000', billing: [{ address: 'A' }] }]);
     await expect(m.billing(ctx, '66-00003.000')).rejects.toThrow('no current owner to bill');

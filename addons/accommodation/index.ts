@@ -253,9 +253,15 @@ const AccommodationAddon = {
     if (!accommodations || !residency || !statusContext) return { healthy: false, records: 0, message: '0 accommodation(s) loaded' };
     const count = accommodations.count();
     const loaded = `${count} accommodation(s) loaded`;
-    const none = await residency.withoutOwner(statusContext(), accommodations.list().map(a => a.id));
-    if (none.length === 0) return { healthy: true, records: count, message: loaded };
-    return { healthy: true, records: count, message: `${loaded}; ${none.length} with no current owner: ${none.join(', ')}` };
+    const ids = accommodations.list().map(a => a.id);
+    const none = await residency.withoutOwner(statusContext(), ids);
+    // Units that block invoicing (ngdpbase#2042): shown here, on the /admin card, before a dues run.
+    const unbilled = residency.withoutBilling(ids);
+    const notes = [
+      ...(none.length > 0 ? [`${none.length} with no current owner: ${none.join(', ')}`] : []),
+      ...(unbilled.length > 0 ? [`${unbilled.length} with no usable billing address (they cannot be invoiced)`] : [])
+    ];
+    return { healthy: true, records: count, message: [loaded, ...notes].join('; ') };
   },
 
   async shutdown(): Promise<void> {

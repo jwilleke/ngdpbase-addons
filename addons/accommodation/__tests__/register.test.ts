@@ -69,7 +69,8 @@ describe('accommodation register()', () => {
     writeFileSync(path.join(dataPath, 'accommodations.json'), JSON.stringify(SAMPLE_ACCOMMODATIONS));
     await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
     const status = await AccommodationAddon.status();
-    expect(status.message).toBe('3 accommodation(s) loaded; 1 with no current owner: 66-00003.000');
+    // only 66-00001.000 keeps billing entries: the other two cannot be invoiced (ngdpbase#2042)
+    expect(status.message).toBe('3 accommodation(s) loaded; 1 with no current owner: 66-00003.000; 2 with no usable billing address (they cannot be invoiced)');
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatchObject({ reason: 'accommodation: status, accommodations with no current owner' });
     await AccommodationAddon.shutdown();
