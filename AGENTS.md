@@ -117,6 +117,12 @@ Read the file the change touches, then follow that file.
 - A plugin whose output is on a page: `caching-developer-guide.md`.
 - Backup of add-on data: `backup-restore-guide.md`.
 
+Who decides what is the add-ons guide's
+[Working with core](https://github.com/jwilleke/ngdpbase/blob/master/docs/guides/addons-developer-guide.md#working-with-core)
+section (operator, 2026-10-25). Read it before building anything that is not purely this repo's
+domain, and before asking the operator a question about core: such questions go to the ngdpbase core
+session, or to an ngdpbase issue.
+
 ## Local ngdpbase
 
 - __Instance:__ a separate ngdpbase clone at `/Volumes/hd2A/test-instances/ngdpbase-addons-instance`
