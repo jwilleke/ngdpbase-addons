@@ -120,9 +120,10 @@ sees none, and is pointed at the Occupancy information form.
   (on-failure `refuse`; the field names, never the address), has `AccommodationManager` write it under
   the system context with a reason naming the owner, then tells the holders of
   `accommodation-notices` (admins on day one; a site grants its board).
-- Known gap: an admin's edit and an owner's billing change to the same accommodation at the same
-  moment can lose one, until `AccommodationManager` writes one at a time per accommodation
-  ([#39](https://github.com/jwilleke/ngdpbase-addons/issues/39)).
+- An admin's edit and an owner's billing change at the same moment both stand: every
+  `AccommodationManager` change runs from its read to its save inside one key of core's
+  `host.keyedSerial()` (ngdpbase 5.30.1, [#39](https://github.com/jwilleke/ngdpbase-addons/issues/39)).
+  It is one key for the whole store, since the provider saves every accommodation in one file.
 - __An occupant moved out__ ([#37](https://github.com/jwilleke/ngdpbase-addons/issues/37)): an owner sets
   the last date of a current occupant's entry on their own unit. It goes through `changeLink`, which,
   without `accommodation-manage`, lets a current owner of the entry's unit end an occupies entry and
@@ -170,6 +171,11 @@ One invoice per billing address. The accommodation keeps its billing parties:
   { "to": ["jim.willeke", "molly.willeke"], "address": { "streetAddress": "21 Fairway Dr", "addressLocality": "Mount Vernon", "addressRegion": "OH", "postalCode": "43050" }, "share": 100 }
 ]
 ```
+
+`ResidencyManager.billing(ctx, id, { on })` is a door: it needs `accommodation-billing-read` (admins;
+a site, or the accounting add-on's policy, grants its invoice job), decided with the caller's context.
+The owners are then read under the system context, with a reason naming the caller and unit, and only
+billing fields come back.
 
 - `to`: the owners named on the invoice; each must be a current owner.
 - `address`: where it goes (schema.org PostalAddress).

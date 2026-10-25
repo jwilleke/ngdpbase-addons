@@ -20,6 +20,7 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 | Permission | Status | Day one |
 | --- | --- | --- |
 | [`accommodation-read`](#accommodation-read) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
+| [`accommodation-billing-read`](#accommodation-billing-read) | Built | admin; a site grants accounting's invoice job |
 | [`accommodation-units-list`](#accommodation-units-list) | Built ([#32](https://github.com/jwilleke/ngdpbase-addons/issues/32)) | every visitor and every user |
 | [`accommodation-manage`](#accommodation-manage) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
 | [`accommodation-notices`](#accommodation-notices) | Built ([#38](https://github.com/jwilleke/ngdpbase-addons/issues/38)) | admin |
@@ -38,6 +39,18 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   company.
 - __Checked:__ where a person asks: the add-on's routes and its plugin.
 - __Recorded:__ not yet. Reads are not audited today.
+
+### accommodation-billing-read
+
+- __Lets a person or a job:__ read a unit's billing parties, `ResidencyManager.billing(ctx, id, { on })`:
+  who its invoices go to, at which address, for what share. It is what the accounting add-on's invoice
+  job asks.
+- __Does not:__ show anything else about the unit or its people.
+- __Checked:__ by `ResidencyManager.billing` with the caller's context. Only then are the owners read,
+  under the system context with a reason naming the caller and unit, and only billing fields are
+  returned, so the caller needs no `search-user` (asked by ngdpbase core for accounting, 2026-10-25).
+- __Granted:__ to admins in accommodation's own policy. accounting's policy grants it to its job
+  `accounting-dues.issue-invoices`, a job subject.
 
 ### accommodation-units-list
 

@@ -239,8 +239,21 @@ export default class ResidencyManager {
    * own address, 100%. Throws, naming the unit, rather than bill wrongly: a
    * party naming someone who is not a current owner, shares that do not add
    * up to 100, no owners, or no address.
+   *
+   * The door for anyone outside this manager, accounting's invoice job included: it decides
+   * `accommodation-billing-read` with the caller's context, then reads the owners it needs under
+   * the system context with a reason naming the caller and unit, and returns only billing fields
+   * (asked by ngdpbase core for accounting, 2026-10-25). A job with no roles needs no search-user.
    */
   async billing(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<BillingParty[]> {
+    if (!this.decide || !this.systemContext) throw new Error('ResidencyManager was started without its decision point');
+    const decision = await this.decide(ctx, { action: 'accommodation-billing-read' });
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-billing-read', decision);
+    return this.billingOf(this.systemContext(`accommodation: billing parties of unit ${id}, for ${ctx.username ?? 'unknown'}`), id, options);
+  }
+
+  /** billing() once the door has decided: read as the context given (the system's). */
+  private async billingOf(ctx: ActorContext, id: string, options: { on?: string } = {}): Promise<BillingParty[]> {
     const owners = await this.owners(ctx, id, options);
     if (owners.length === 0) throw new Error(`unit ${id}: no current owner to bill`);
     const byName = new Map(owners.map(o => [o.username, o]));
@@ -373,7 +386,7 @@ export default class ResidencyManager {
       }
       if (isOwner) {
         // Billing parties the unit cannot bill yet (no address, shares off) are left out, not guessed.
-        unit.billing = await this.billing(system, id).then(parties => parties.map((p, index) =>
+        unit.billing = await this.billingOf(system, id).then(parties => parties.map((p, index) =>
           ({ index, name: p.name, address: p.address, share: p.share, yours: p.to.some(o => o.username === me) })), () => undefined);
       }
       result.push(unit);

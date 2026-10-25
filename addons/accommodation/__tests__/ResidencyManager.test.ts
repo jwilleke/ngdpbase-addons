@@ -19,7 +19,10 @@ describe('ResidencyManager', () => {
     return new ResidencyManager({
       users: async (c) => { asked.push(c); return SAMPLE_USERS; },
       accommodation: (id) => byId.get(id),
-      today: () => TEST_TODAY
+      today: () => TEST_TODAY,
+      // the caller here holds accommodation-billing-read; 'nobody' does not
+      decide: async (c, { action }) => ({ permit: action === 'accommodation-billing-read' && (c as { username?: string }).username !== 'nobody', applicable: true, reason: 'test' }),
+      systemContext: (reason) => ({ username: 'system', roles: [], isAuthenticated: true, reason }) as unknown as ActorContext
     });
   }
 
@@ -93,6 +96,16 @@ describe('ResidencyManager', () => {
       { to: [{ username: 'sam.example', name: 'Sam Example', email: null }], name: 'Sam Example',
         address: { streetAddress: '9 Elsewhere Ln', addressLocality: 'Columbus', addressRegion: 'OH', postalCode: '43215' }, share: 40 }
     ]);
+  });
+
+  test('billing is a door: decided with the caller, then read as the system naming them; refused without the permission', async () => {
+    const m = open();
+    await m.billing(ctx, '66-00001.000');
+    expect(asked.length > 0 && asked.every(c => (c as { reason?: string }).reason === 'accommodation: billing parties of unit 66-00001.000, for treasurer')).toBe(true);
+    asked = [];
+    const job = { username: 'nobody', roles: [], isAuthenticated: false } as unknown as ActorContext;
+    await expect(m.billing(job, '66-00001.000')).rejects.toMatchObject({ name: 'AccommodationRefusedError', permission: 'accommodation-billing-read' });
+    expect(asked).toEqual([]); // nobody is read before the door says yes
   });
 
   test('billing with no parties kept: every current owner, one invoice, at the unit address, 100%', async () => {

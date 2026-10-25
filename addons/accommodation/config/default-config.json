@@ -14,6 +14,12 @@
       "icon": "building",
       "color": "#6c757d"
     },
+    "accommodation-billing-read": {
+      "description": "Read a unit's billing parties: who its invoices go to, at which address, for what share. What the accounting add-on's invoice job asks",
+      "label": "Read units' billing parties",
+      "icon": "file-invoice",
+      "color": "#6c757d"
+    },
     "accommodation-units-list": {
       "description": "See the list of accommodations by street address, with no names: the unit choices on the Occupancy information form",
       "label": "See the list of unit addresses",
@@ -100,7 +106,8 @@
       "actions": [
         "accommodation-read",
         "accommodation-manage",
-        "accommodation-notices"
+        "accommodation-notices",
+        "accommodation-billing-read"
       ]
     },
     {
