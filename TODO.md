@@ -34,6 +34,7 @@ last_updated: "2026-10-24"
 
 ## 🟠 P1
 
+- [#41](https://github.com/jwilleke/ngdpbase-addons/issues/41) — [FEATURE] accommodation: each unit keeps the county's record; owners' start date from the newest sale
 - [#40](https://github.com/jwilleke/ngdpbase-addons/issues/40) — [FEATURE] accommodation: a signed-in owner adds or removes an owner, approved before it applies
 - [#35](https://github.com/jwilleke/ngdpbase-addons/issues/35) — [FEATURE] association: a signed-in owner or occupant's own-unit submission applies directly (#17d)
 - [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) — [FEATURE] accommodation: billing parties, charges and late-charge rules
