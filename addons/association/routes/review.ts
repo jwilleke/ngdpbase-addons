@@ -84,9 +84,14 @@ export default function reviewRoutes(engine: Engine, host: AddonHost): Router {
   }));
 
   router.post('/review/:id/approve', decide('approve', async (ctx, req) => {
-    const share = typeof (req.body as Record<string, unknown>)?.['share'] === 'string' ? Number((req.body as Record<string, string>)['share']) : undefined;
-    const { username } = await occupancy().approve(ctx.getActor(), String(req.params['id']), { share });
-    return `approved&reason=${encodeURIComponent(username)}`;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const share = typeof body['share'] === 'string' ? Number(body['share']) : undefined;
+    const newUsername = typeof body['newUsername'] === 'string' ? body['newUsername'] : undefined;
+    const result = await occupancy().approve(ctx.getActor(), String(req.params['id']), { share, newUsername });
+    const said = !result.created ? result.username
+      : result.invitation?.outcome === 'sent' ? `${result.username}, a new account, invited by email`
+        : `${result.username}, a new account; the invitation was not sent (${result.invitation?.reason ?? result.invitation?.outcome ?? 'unknown'}): resend it from User Management`;
+    return `approved&reason=${encodeURIComponent(said)}`;
   }));
 
   return router;

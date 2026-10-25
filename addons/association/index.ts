@@ -39,13 +39,18 @@ interface Engine {
 interface AccommodationManagerLike { count(): number }
 interface ResidencyManagerLike {
   checkEntry: OccupancyManagerOptions['checkEntry'];
+  contactDetails: ApprovalDoors['contactDetails'];
   changeLink(ctx: ActorContext, username: string, change: unknown): Promise<{ changed: boolean; at?: EntryRef }>;
 }
 interface UserManagerLike {
   searchUsers(query: string, options: { limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<Array<{ username: string; email?: string }>>;
+  createUser(user: { username: string; email: string; displayName: string }, ctx: ActorContext): Promise<{ username: string }>;
+}
+interface AuthManagerLike {
+  inviteUser(ctx: ActorContext, username: string): Promise<{ outcome: string; reason?: string }>;
 }
 interface IdentityManagerLike {
-  search(ctx: ActorContext, query: string, options?: { limit?: number }): Promise<Array<{ '@id': string; identifier: string; contactPoint?: unknown[] }>>;
+  getByUserIdentifier(ctx: ActorContext, username: string): Promise<{ '@id': string; contactPoint?: unknown[] } | null>;
   update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<unknown>;
 }
 interface DatabaseManagerLike {
@@ -123,11 +128,19 @@ const AssociationAddon = {
       searchUsers: (ctx, email) => users.searchUsers(email, { limit: 2, activeOnly: false }, ctx),
       addEntry: async (ctx, username, entry) => (await residency.changeLink(ctx, username, { op: 'add', link: entry })).at,
       removeEntry: async (ctx, username, at) => { await residency.changeLink(ctx, username, { op: 'remove', at }); },
-      findPerson: async (ctx, username, email) => {
-        const found = (await persons.search(ctx, email, { limit: 10 })).find(p => p.identifier === username);
+      // The account's own identity record, read as the reviewer (identity-read, from the review policy).
+      findPerson: async (ctx, username) => {
+        const found = await persons.getByUserIdentifier(ctx, username);
         return found ? { id: found['@id'], contactPoint: found.contactPoint } : null;
       },
-      updatePerson: (ctx, id, patch) => persons.update(ctx, id, patch)
+      updatePerson: (ctx, id, patch) => persons.update(ctx, id, patch),
+      contactDetails: (answers) => residency.contactDetails(answers),
+      // Someone with no account (#34): made with no password, then invited, both as the reviewer.
+      createUser: (ctx, user) => users.createUser(user, ctx),
+      inviteUser: async (ctx, username) => {
+        const auth = engine.getManager<AuthManagerLike>('AuthManager');
+        return auth ? auth.inviteUser(ctx, username) : { outcome: 'not-sent', reason: 'AuthManager is not available' };
+      }
     } : undefined;
     occupancy = new OccupancyManager({ db, decide, recordAudit, host, approval, checkEntry: (entry) => residency.checkEntry(entry), notifyReviewers });
     engine.registerManager('OccupancyManager', occupancy);

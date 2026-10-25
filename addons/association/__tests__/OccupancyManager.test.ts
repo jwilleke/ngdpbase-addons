@@ -125,8 +125,21 @@ describe('OccupancyManager review (#33)', () => {
           return { type: entry.type, index: 0, expected: '{}' };
         },
         removeEntry: async (_c, username) => { calls.push(`remove:${username}`); if (fail['remove']) throw new Error(fail['remove']); },
-        findPerson: async (_c, username) => (username === 'lee.renter' ? { id: 'urn:uuid:lee', contactPoint: [{ '@type': 'ContactPoint', contactType: 'home', telephone: 'old' }, { '@type': 'ContactPoint', contactType: 'fax', telephone: 'keep' }] } : null),
-        updatePerson: async (_c, id, patch) => { calls.push(`person:${id}:${JSON.stringify(patch)}`); if (fail['person']) throw new Error(fail['person']); }
+        findPerson: async (_c, username) => (username === 'test.visitor' ? { id: 'urn:uuid:new', contactPoint: [] } : username === 'lee.renter' ? { id: 'urn:uuid:lee', contactPoint: [{ '@type': 'ContactPoint', contactType: 'home', telephone: 'old' }, { '@type': 'ContactPoint', contactType: 'fax', telephone: 'keep' }] } : null),
+        updatePerson: async (_c, id, patch) => { calls.push(`person:${id}:${JSON.stringify(patch)}`); if (fail['person']) throw new Error(fail['person']); },
+        createUser: async (c, user) => {
+          calls.push(`create:${user.username}:${user.email}:${user.displayName}`); expect(c).toBe(reviewer);
+          if (fail['create']) throw new Error(fail['create']);
+          accounts = [{ username: user.username, email: user.email }];
+          return { username: user.username };
+        },
+        inviteUser: async (_c, username) => { calls.push(`invite:${username}`); return fail['invite'] ? { outcome: 'email-unavailable', reason: fail['invite'] } : { outcome: 'sent' }; },
+        // a stand-in for accommodation's mapping, which accommodation's own tests cover
+        contactDetails: (a) => ({ contactPoint: [
+          ...(a['homeMailingAddress'] ? [{ '@type': 'PostalAddress' as const, contactType: 'mailing', streetAddress: String(a['homeMailingAddress']) }] : []),
+          ...(a['homePhone'] ? [{ '@type': 'ContactPoint' as const, contactType: 'home', telephone: String(a['homePhone']) }] : []),
+          ...(a['emergencyName'] ? [{ '@type': 'ContactPoint' as const, contactType: 'emergency', name: String(a['emergencyName']), telephone: String(a['emergencyPhone']) }] : [])
+        ] })
       }
     });
   }
@@ -158,7 +171,7 @@ describe('OccupancyManager review (#33)', () => {
   test('approve: finds the one account, records first, adds the entry, writes the details in schema.org shape, marks it approved', async () => {
     const m = open();
     await queued(m, 'a', { ...ANSWERS, homeMailingAddress: 'PO Box 1', emergencyName: 'Kim', emergencyPhone: '555-0199', agentName: '' });
-    expect(await m.approve(reviewer, 'a')).toEqual({ username: 'lee.renter' });
+    expect(await m.approve(reviewer, 'a')).toEqual({ username: 'lee.renter', created: false });
     expect(calls.slice(0, 3)).toEqual(['search:lee@example.org', 'audit:occupancy-approve:success', 'add:lee.renter:occupant:']);
     const patch = JSON.parse(calls[3].replace('person:urn:uuid:lee:', '')) as { contactPoint: Array<Record<string, string>> };
     expect(patch.contactPoint).toEqual([
@@ -181,7 +194,7 @@ describe('OccupancyManager review (#33)', () => {
   });
 
   test.each([
-    [[], 'no account has the email lee@example.org'],
+    [[], 'no account has the email lee@example.org; give a username for a new one'],
     [[{ username: 'a', email: 'lee@example.org' }, { username: 'b', email: 'LEE@example.org' }], 'more than one account'],
     [[{ username: 'leeway', email: 'lee@example.org.uk' }], 'no account has the email']
   ])('approve never guesses the account: %o', async (found, message) => {
@@ -220,5 +233,49 @@ describe('OccupancyManager review (#33)', () => {
     expect(calls.some(c => c.startsWith('person'))).toBe(false);
     expect(audits.map(a => a.result)).toEqual(['success', 'failure']);
     expect(status('a')).toBe('pending');
+  });
+
+  describe('someone with no account (#34)', () => {
+    test('approve makes the account with no password, invites them, then applies the entry and details', async () => {
+      const m = open();
+      await queued(m, 'n', { ...ANSWERS, email: 'test.visitor@example.org', firstName: 'Test', lastName: 'Visitor' });
+      accounts = [];
+      const listed = await m.pending(reviewer);
+      expect(listed[0].accounts).toBe('none');
+      calls = []; audits = [];
+      expect(await m.approve(reviewer, 'n', { newUsername: 'test.visitor' })).toEqual({ username: 'test.visitor', created: true, invitation: { outcome: 'sent' } });
+      expect(calls.filter(c => !c.startsWith('person'))).toEqual([
+        'search:test.visitor@example.org', 'audit:occupancy-approve:success',
+        'create:test.visitor:test.visitor@example.org:Test Visitor', 'invite:test.visitor', 'add:test.visitor:occupant:'
+      ]);
+      expect(audits[0].metadata).toMatchObject({ username: 'test.visitor', newAccount: true });
+      expect(status('n')).toBe('approved');
+    });
+
+    test('an invitation that could not be sent is reported; the approval still completes', async () => {
+      const m = open();
+      await queued(m, 'n', { ...ANSWERS, email: 'test.visitor@example.org' });
+      accounts = []; fail['invite'] = 'email is not working';
+      expect(await m.approve(reviewer, 'n', { newUsername: 'test.visitor' })).toMatchObject({ created: true, invitation: { outcome: 'email-unavailable', reason: 'email is not working' } });
+      expect(status('n')).toBe('approved');
+    });
+
+    test.each([[undefined], [''], ['no spaces'], ['-x']])('a missing or bad username %o is refused before anything is written', async (newUsername) => {
+      const m = open();
+      await queued(m, 'n', { ...ANSWERS, email: 'test.visitor@example.org' });
+      accounts = [];
+      await expect(m.approve(reviewer, 'n', { newUsername })).rejects.toThrow('give a username for a new one');
+      expect(calls.filter(c => !c.startsWith('search'))).toEqual([]);
+    });
+
+    test('an account that cannot be made is recorded as a failure, and nothing else is written', async () => {
+      const m = open();
+      await queued(m, 'n', { ...ANSWERS, email: 'test.visitor@example.org' });
+      accounts = []; fail['create'] = 'username taken';
+      await expect(m.approve(reviewer, 'n', { newUsername: 'test.visitor' })).rejects.toThrow('username taken');
+      expect(calls.some(c => c.startsWith('add') || c.startsWith('person'))).toBe(false);
+      expect(audits.map(a => a.result)).toEqual(['success', 'failure']);
+      expect(status('n')).toBe('pending');
+    });
   });
 });

@@ -31,6 +31,13 @@
         </dl>
         <form method="POST" action="/addons/association/review/<%= encodeURIComponent(s.id) %>/approve" class="d-inline-flex gap-1 align-items-center me-2">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <% if (s.accounts === 'none') { %>
+            <label class="small" for="user-<%= s.id %>">New username</label>
+            <input type="text" id="user-<%= s.id %>" name="newUsername" class="form-control form-control-sm" style="width: 10rem" required
+              value="<%= String((a.firstName || '') + '.' + (a.lastName || '')).toLowerCase().replace(/[^a-z0-9._-]/g, '') %>">
+          <% } else if (s.accounts === 'several') { %>
+            <span class="small text-danger">More than one account has this email: fix that first.</span>
+          <% } %>
           <% if (s.entryType === 'owner') { %>
             <label class="small" for="share-<%= s.id %>">Share %</label>
             <input type="number" id="share-<%= s.id %>" name="share" class="form-control form-control-sm" style="width: 6rem" min="0.01" max="100" step="any" value="100" required>
@@ -41,7 +48,8 @@
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
         </form>
-        <p class="small text-muted mt-2 mb-0">Approving adds the <%= s.entryType %> entry for the account with this email and writes the details to their contact record. It needs an account with this email; creating one comes later.</p>
+        <p class="small text-muted mt-2 mb-0">Approving adds the <%= s.entryType %> entry for the account with this email and writes the details to their contact record.
+          <% if (s.accounts === 'none') { %>No account has this email yet: approving makes one with no password and emails them an invitation to set it up.<% } %></p>
       </div>
     </div>
   <% }) %>

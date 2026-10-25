@@ -10,8 +10,9 @@
  * Review (#33): `pending` lists what waits, `reject` refuses one and `approve` applies one for
  * a person who has an account: their ownership or occupies entry (accommodation's changeLink,
  * which asks `accommodation-manage` itself) and their details on their identity record
- * (IdentityManager, `identity-manage`), in schema.org shape: the home address as `address`, every
- * other address and phone as a `contactPoint` typed by `contactType`. Each asks the decision
+ * (IdentityManager, `identity-manage`), in schema.org shape, by accommodation's own mapping
+ * (ResidencyManager.contactDetails): the home address as `address`, every other address and phone
+ * as a `contactPoint` typed by `contactType`. Each asks the decision
  * point for `association-review` with the reviewer's context (this manager is the
  * enforcement point for its submissions) and a "no" throws OccupancyRefusedError for
  * ApiContext.enforceDeny. A rejection is recorded before it is made (on-failure refuse).
@@ -20,6 +21,9 @@
  * (ResidencyManager.checkEntry), the one that applies them later, never a copy of it.
  */
 import type { ActorContext, AddonHost, ContactPointEntry, Decision, PostalAddress } from '@jwilleke/ngdpbase-types';
+
+/** accommodation's mapping from the form's answers to identity-record fields (ResidencyManager.contactDetails). */
+export type ContactDetailsFrom = (answers: Record<string, unknown>) => { address?: PostalAddress; contactPoint: ContactPointEntry[] };
 
 /** A "no" from the decision point, carrying the permission and decision for ApiContext.enforceDeny. */
 export class OccupancyRefusedError extends Error {
@@ -45,37 +49,19 @@ export interface ApprovalDoors {
   /** ResidencyManager.changeLink: add, and remove for the undo. */
   addEntry: (ctx: ActorContext, username: string, entry: NewEntry) => Promise<EntryRef | undefined>;
   removeEntry: (ctx: ActorContext, username: string, at: EntryRef) => Promise<void>;
-  /** IdentityManager.search and update: the person's own identity record. */
-  findPerson: (ctx: ActorContext, username: string, email: string) => Promise<{ id: string; contactPoint?: unknown[] } | null>;
+  /** IdentityManager.getByUserIdentifier and update: the person's own identity record. */
+  findPerson: (ctx: ActorContext, username: string) => Promise<{ id: string; contactPoint?: unknown[] } | null>;
   updatePerson: (ctx: ActorContext, id: string, patch: Record<string, unknown>) => Promise<unknown>;
+  /** accommodation's ResidencyManager.contactDetails: the one mapping of the answers to identity-record fields. */
+  contactDetails: ContactDetailsFrom;
+  /** UserManager.createUser with no password, as the reviewer (#34). */
+  createUser: (ctx: ActorContext, user: { username: string; email: string; displayName: string }) => Promise<{ username: string }>;
+  /** AuthManager.inviteUser, as the reviewer: 'sent', or why nothing was sent. */
+  inviteUser: (ctx: ActorContext, username: string) => Promise<{ outcome: string; reason?: string }>;
 }
 
-/**
- * The answers as identity-record fields (settled with ngdpbase core, 2026-10-24): the home
- * address as `address`; everything else as `contactPoint` entries, a PostalAddress for an
- * address and a ContactPoint for a phone (core's `ContactPointEntry`, ngdpbase 5.29.1). Answers
- * left blank are left out.
- */
-export function detailsFrom(data: Record<string, unknown>): { address?: PostalAddress; contactPoint: ContactPointEntry[] } {
-  const a = (name: string): string => answer(data, name);
-  const entry = (type: 'PostalAddress' | 'ContactPoint', contactType: string,
-    fields: { name?: string; streetAddress?: string; telephone?: string; email?: string }): ContactPointEntry[] => {
-    const given = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== ''));
-    return Object.keys(given).length === 0 ? [] : [{ '@type': type, contactType, ...given } as ContactPointEntry];
-  };
-  const contactPoint = [
-    ...entry('PostalAddress', 'mailing', { streetAddress: a('homeMailingAddress') }),
-    ...entry('ContactPoint', 'home', { telephone: a('homePhone') }),
-    ...entry('ContactPoint', 'other', { telephone: a('otherPhone') }),
-    ...entry('PostalAddress', 'business', { streetAddress: a('businessMailingAddress') }),
-    ...entry('ContactPoint', 'business', { telephone: a('businessPhone') }),
-    ...entry('PostalAddress', 'agent', { name: a('agentName'), streetAddress: a('agentBusinessAddress'), telephone: a('agentBusinessPhone') }),
-    ...entry('ContactPoint', 'emergency', { name: a('emergencyName'), telephone: a('emergencyPhone'), email: a('emergencyEmail') })
-  ];
-  const home = a('homeAddress');
-  const address: PostalAddress = { '@type': 'PostalAddress', streetAddress: home };
-  return { ...(home ? { address } : {}), contactPoint };
-}
+/** What approve did: the account, and for a new one whether its invitation went out. */
+export interface ApprovalResult { username: string; created: boolean; invitation?: { outcome: string; reason?: string } }
 
 /** A submission as the review page shows it. */
 export interface PendingSubmission {
@@ -85,6 +71,8 @@ export interface PendingSubmission {
   unit: string;
   entryType: 'owner' | 'occupant';
   answers: Record<string, unknown>;
+  /** How many accounts have its email: approve needs exactly one, or none and a username for a new one. */
+  accounts?: 'none' | 'one' | 'several';
 }
 
 /** The slice of the SQLite handle this manager uses. */
@@ -196,10 +184,18 @@ export default class OccupancyManager {
     await this.authorize(ctx);
     const rows = this.options.db.prepare(`SELECT id, received_at, submitted_by, unit, entry_type, answers
       FROM association_occupancy_submissions WHERE status = 'pending' ORDER BY received_at, id`).all() as Array<Record<string, string>>;
-    return rows.map(r => ({
-      id: r.id, receivedAt: r.received_at, submittedBy: r.submitted_by, unit: r.unit,
-      entryType: r.entry_type as 'owner' | 'occupant', answers: JSON.parse(r.answers) as Record<string, unknown>
-    }));
+    const doors = this.options.approval;
+    const list: PendingSubmission[] = [];
+    for (const r of rows) {
+      const answers = JSON.parse(r.answers) as Record<string, unknown>;
+      const found = doors ? await this.accountsFor(ctx, answer(answers, 'email')) : [];
+      list.push({
+        id: r.id, receivedAt: r.received_at, submittedBy: r.submitted_by, unit: r.unit,
+        entryType: r.entry_type as 'owner' | 'occupant', answers,
+        ...(doors ? { accounts: found.length === 0 ? 'none' as const : found.length === 1 ? 'one' as const : 'several' as const } : {})
+      });
+    }
+    return list;
   }
 
   /**
@@ -239,7 +235,7 @@ export default class OccupancyManager {
    * details cannot be written, the entry is removed again and the submission stays pending; if
    * that fails too, the error says the entry is still there.
    */
-  async approve(ctx: ActorContext, id: string, options: { share?: number } = {}): Promise<{ username: string }> {
+  async approve(ctx: ActorContext, id: string, options: { share?: number; newUsername?: string } = {}): Promise<ApprovalResult> {
     await this.authorize(ctx);
     const doors = this.options.approval;
     if (!doors) throw new OccupancyReviewError('approving is not available on this site (no user or contact manager)');
@@ -250,10 +246,14 @@ export default class OccupancyManager {
     const data = JSON.parse(row.answers) as Record<string, unknown>;
 
     const email = answer(data, 'email');
-    const matches = (await doors.searchUsers(ctx, email)).filter(u => (u.email ?? '').trim().toLowerCase() === email.toLowerCase());
-    if (matches.length === 0) throw new OccupancyReviewError(`no account has the email ${email}; creating one comes with #34`);
+    const matches = await this.accountsFor(ctx, email);
     if (matches.length > 1) throw new OccupancyReviewError(`more than one account has the email ${email}; not guessing which`);
-    const { username } = matches[0];
+    // No account: the reviewer names a new one, made with no password and an invitation (#34).
+    const newUsername = matches.length === 0 ? (options.newUsername ?? '').trim() : '';
+    if (matches.length === 0 && !/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(newUsername)) {
+      throw new OccupancyReviewError(`no account has the email ${email}; give a username for a new one (letters, digits, . _ -)`);
+    }
+    const username = matches.length === 1 ? matches[0].username : newUsername;
 
     const entry: NewEntry = { parcel: row.unit, type: row.entry_type, from: answer(data, 'from'), to: answer(data, 'to') || 'current' };
     if (entry.type === 'owner') {
@@ -263,8 +263,8 @@ export default class OccupancyManager {
     }
     const problem = this.options.checkEntry(entry);
     if (problem) throw new OccupancyReviewError(problem);
-    const person = await doors.findPerson(ctx, username, email);
-    if (!person) throw new OccupancyReviewError(`${username} has no identity record to hold the details`);
+    const existing = matches.length === 1 ? await doors.findPerson(ctx, username) : null;
+    if (matches.length === 1 && !existing) throw new OccupancyReviewError(`${username} has no identity record to hold the details`);
 
     const { metadata: whoMetadata, ...who } = this.options.host.actorOf(ctx);
     const record = (result: 'success' | 'failure', reason?: string): OccupancyAuditRecord => ({
@@ -272,7 +272,7 @@ export default class OccupancyManager {
       ...who,
       result,
       action: 'occupancy-approve', severity: 'medium', resource: row.unit, resourceType: 'accommodation',
-      metadata: { ...whoMetadata, submissionId: id, entryType: row.entry_type, username, owner: username, ...(reason ? { reason } : {}) }
+      metadata: { ...whoMetadata, submissionId: id, entryType: row.entry_type, username, owner: username, newAccount: matches.length === 0, ...(reason ? { reason } : {}) }
     });
     // on-failure refuse: no record, no change.
     await this.options.recordAudit(record('success'));
@@ -281,6 +281,23 @@ export default class OccupancyManager {
       throw err;
     };
 
+    // A new account first: made with no password, and its owner invited to choose their own (#34).
+    // Core records both. If a later step fails, the account stays; approving again finds it.
+    let invitation: ApprovalResult['invitation'];
+    let person = existing;
+    if (matches.length === 0) {
+      try {
+        const displayName = [answer(data, 'firstName'), answer(data, 'lastName')].filter(Boolean).join(' ');
+        await doors.createUser(ctx, { username, email, displayName });
+        invitation = await doors.inviteUser(ctx, username);
+        person = await doors.findPerson(ctx, username);
+        if (!person) throw new Error(`${username} has no identity record to hold the details`);
+      } catch (err) {
+        return failed(`the account ${username} was not made ready: ${err instanceof Error ? err.message : String(err)}`, err);
+      }
+    }
+    const kept0 = person!;
+
     let at: EntryRef | undefined;
     try {
       at = await doors.addEntry(ctx, username, entry);
@@ -288,11 +305,11 @@ export default class OccupancyManager {
       return failed(`the entry was not added: ${err instanceof Error ? err.message : String(err)}`, err);
     }
 
-    const details = detailsFrom(data);
+    const details = doors.contactDetails(data);
     const written = new Set(details.contactPoint.map(c => c.contactType ?? ''));
-    const kept = (person.contactPoint ?? []).filter(c => !written.has(String((c as Record<string, unknown>)['contactType'])));
+    const kept = (kept0.contactPoint ?? []).filter(c => !written.has(String((c as Record<string, unknown>)['contactType'])));
     try {
-      await doors.updatePerson(ctx, person.id, { ...(details.address ? { address: details.address } : {}), contactPoint: [...kept, ...details.contactPoint] });
+      await doors.updatePerson(ctx, kept0.id, { ...(details.address ? { address: details.address } : {}), contactPoint: [...kept, ...details.contactPoint] });
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       try {
@@ -311,7 +328,13 @@ export default class OccupancyManager {
       const still = `the entry and the details for ${username} are in effect, but submission ${id} could not be marked approved: ${err instanceof Error ? err.message : String(err)}`;
       return failed(still, new Error(still));
     }
-    return { username };
+    return { username, created: matches.length === 0, ...(invitation ? { invitation } : {}) };
+  }
+
+  /** The accounts whose email is exactly this one, found as the reviewer. */
+  private async accountsFor(ctx: ActorContext, email: string): Promise<Array<{ username: string }>> {
+    const doors = this.options.approval!;
+    return (await doors.searchUsers(ctx, email)).filter(u => (u.email ?? '').trim().toLowerCase() === email.toLowerCase());
   }
 
   /** Ask the decision point for association-review with the caller's context; a "no" throws. */

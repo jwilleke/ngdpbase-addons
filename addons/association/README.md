@@ -76,25 +76,30 @@ waiting, with their answers ([#33](https://github.com/jwilleke/ngdpbase-addons/i
 
 - __Reject:__ nothing is applied. Recorded as `occupancy-reject` first.
 - __Approve__ applies a submission for the person with its email, in this order:
-  - Check everything first. Exactly one account must have the email, found through
-    `UserManager.searchUsers` with the reviewer's context; none or more than one is never guessed.
+  - Check everything first. The account with the email is found through `UserManager.searchUsers`
+    with the reviewer's context; more than one is never guessed. With none, the reviewer gives a
+    username for a new one ([#34](https://github.com/jwilleke/ngdpbase-addons/issues/34)).
     Accommodation must accept the entry, and an owner's share must be given (default 100 on the page).
   - Record `occupancy-approve` (on-failure `refuse`).
+  - For someone with no account: make it with no password (`UserManager.createUser`) and invite them
+    (`AuthManager.inviteUser`), both as the reviewer, so they choose their own password or passkey. Core
+    records both. An invitation that could not be sent (email off, say) is shown to the reviewer, and
+    the approval still completes; an administrator can resend it from User Management. If a later
+    step fails, the account stays, and approving again finds it.
   - Add the ownership or occupies entry through accommodation's `changeLink`, which also asks
     `accommodation-manage`. A reviewer needs both permissions; association does not grant
     `accommodation-manage`.
   - Write the details to the person's identity record through `IdentityManager.update`
-    (`identity-manage`). The home address goes in `address`. Every other address and phone, the agent
+    (`identity-manage`), in accommodation's own mapping (`ResidencyManager.contactDetails`). The home address goes in `address`. Every other address and phone, the agent
     and the emergency contact go in `contactPoint`, each typed by `contactType` (`mailing`, `home`,
     `other`, `business`, `agent`, `emergency`). Kinds the form does not write are kept.
   - Mark the submission approved.
 - If the details cannot be written, the entry is removed again, the submission stays pending, and the
   failure is recorded. If that removal fails too, the error says the entry is still in effect.
-- association's review policy grants admins `identity-read`, `identity-manage` and `search-user` with
+- association's review policy grants admins `identity-read`, `identity-manage`, `search-user` and
+  `user-create` with
   `association-review`.
-- Not yet: creating an account for someone new
-  ([#34](https://github.com/jwilleke/ngdpbase-addons/issues/34)), and applying a signed-in owner's or
-  occupant's own-unit submission directly ([#35](https://github.com/jwilleke/ngdpbase-addons/issues/35)).
+- Not yet: applying a signed-in owner's or occupant's own-unit submission directly ([#35](https://github.com/jwilleke/ngdpbase-addons/issues/35)).
 - The details use core's own schema.org types (`ContactPointEntry`: a `ContactPoint` or a
   `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.30.0 or later (IdentityManager, `identity-manage`).
 
