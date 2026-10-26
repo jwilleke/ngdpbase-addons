@@ -100,7 +100,9 @@ this page gathers them and says what is still open. The wider condo design is
 
 - __Folio numbers__: accounting numbers them per unit, in order: `66-09960.043/F01`, `/F02`, ...
 - __A folio closes__ when it is no longer assigned and its balance is 0.
-- __Write-off or claim__ on a folio: a new treasurer action.
+- __Write-off or lien__ on a folio: new treasurer actions. When the association deems a folio's debt
+  uncollectable it files a lien with the county; the lien record (date filed, amount, the county's
+  reference) does not change the balance (operator, 2026-10-26).
 - __From accommodation's `billing(ctx, unitId, { on })`__, accounting needs the ownership period:
   `{ period: { id, from, through? }, billing: [...], owners: [...] }`. The period id is stable while
   the same owners hold the same shares, and new when any owner or share changes; a corrected date
@@ -112,7 +114,9 @@ this page gathers them and says what is still open. The wider condo design is
   it, or one of its invoices, so the new owners never pay the old debt by accident.
 - __Who sees what__: current owners see the assigned folio; a past owner sees their own folio with its
   balance (this changes accounting's D-045); the board sees every folio, open ones flagged.
-- __Late charges__ run per folio.
+- __Late charges__ run per folio. An unassigned folio that still owes keeps getting late fees and the
+  8% interest every month until it is paid off or written off; it gets no new assessments (operator,
+  2026-10-26).
 
 ## Vendor bills (payables, decided 2026-10-26)
 
