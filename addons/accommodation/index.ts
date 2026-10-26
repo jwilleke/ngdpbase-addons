@@ -66,6 +66,8 @@ interface AuthManagerLike {
 }
 interface IdentityManagerLike {
   getByUserIdentifier(ctx: ActorContext, username: string): Promise<{ '@id': string; contactPoint?: unknown[] } | null>;
+  /** ngdpbase 5.34.0 (#2041): the @id behind a username, or null; never throws for a store that is down. */
+  identityIdOf(ctx: ActorContext, username: string): Promise<string | null>;
   update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<unknown>;
 }
 interface AddonsManagerLike {
@@ -87,7 +89,7 @@ let statusContext: (() => ActorContext) | null = null;
 
 const AccommodationAddon = {
   name: 'accommodation',
-  version: '0.1.0',
+  version: '0.2.0',
   description: 'Accommodations by parcel, their categories, and their owners and occupants',
   author: 'jwilleke',
   dependencies: [] as string[],
@@ -146,6 +148,7 @@ const AccommodationAddon = {
           const found = await engine.getManager<IdentityManagerLike>('IdentityManager')?.getByUserIdentifier(systemCtx, username);
           return found ? { id: found['@id'], contactPoint: found.contactPoint } : null;
         },
+        idOf: async (ctx, username) => (await engine.getManager<IdentityManagerLike>('IdentityManager')?.identityIdOf(ctx, username)) ?? null,
         update: async (systemCtx, id, patch) => {
           const identities = engine.getManager<IdentityManagerLike>('IdentityManager');
           if (!identities) throw new Error('IdentityManager is not available');

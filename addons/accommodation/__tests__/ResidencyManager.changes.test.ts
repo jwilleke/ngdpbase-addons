@@ -26,10 +26,12 @@ describe('ResidencyManager.changeLink (#28)', () => {
   let auditFails: boolean;
   let writeFails: boolean;
   let followed: unknown[];
+  let idOf: (c: unknown, username: string) => Promise<string | null>;
 
   beforeEach(() => {
     users = structuredClone(SAMPLE_USERS);
     audits = []; order = []; auditFails = false; writeFails = false; followed = [];
+    idOf = async (_c, username) => (username === 'admin' ? 'urn:uuid:admin' : null);
   });
 
   function open(): ResidencyManager {
@@ -38,6 +40,8 @@ describe('ResidencyManager.changeLink (#28)', () => {
       users: async () => structuredClone(users),
       accommodation: (id) => byId.get(id),
       today: () => TEST_TODAY,
+      systemContext: (reason) => ({ username: 'system', roles: [], isAuthenticated: true, reason }) as unknown as ActorContext,
+      identities: { find: async () => null, update: async () => undefined, idOf: (c, username) => idOf(c, username) },
       changes: {
         host,
         decide: async (c, { action }) => ({ permit: (GRANTS[(c as { username?: string }).username ?? ''] ?? []).includes(action), applicable: true, reason: 'test' }),
@@ -67,6 +71,20 @@ describe('ResidencyManager.changeLink (#28)', () => {
     return { type, index, expected: JSON.stringify(list[index]) };
   };
 
+  test('audit owner is the identity @id with the username beside it; no account or an unanswered lookup leaves the name (#2042)', async () => {
+    const m = open();
+    await m.changeLink(treasurer, 'admin', { op: 'add', link: { parcel: '66-00003.000', type: 'owner', from: '2026-10-01', to: 'current', share: 100 } });
+    expect(audits[0].metadata).toMatchObject({ owner: 'urn:uuid:admin', ownerUser: 'admin' });
+    expect(audits[0].metadata).not.toHaveProperty('username');
+    audits.length = 0;
+    await m.changeLink(treasurer, 'pat.example', { op: 'add', link: { parcel: '66-00003.000', type: 'owner', from: '2026-10-01', to: 'current', share: 10 } });
+    expect(audits[0].metadata).toMatchObject({ owner: 'pat.example', ownerUser: 'pat.example' });
+    audits.length = 0;
+    idOf = async () => { throw new Error('identity store down'); };
+    await m.changeLink(treasurer, 'admin', { op: 'add', link: { parcel: '66-00002.000', type: 'owner', from: '2026-10-01', to: 'current', share: 10 } });
+    expect(audits[0].metadata).toMatchObject({ owner: 'admin', ownerUser: 'admin' });
+  });
+
   test('adds an owner entry, recorded first, then starts the roles job as the caller', async () => {
     const m = open();
     const result = await m.changeLink(treasurer, 'admin', { op: 'add', link: { parcel: '66-00003.000', type: 'owner', from: '2026-10-01', to: 'current', share: 100 } });
@@ -75,7 +93,7 @@ describe('ResidencyManager.changeLink (#28)', () => {
     expect(order).toEqual(['audit:success', 'write', 'roles-job']);
     expect(audits[0]).toMatchObject({
       user: 'treasurer', action: 'owner-add', resource: '66-00003.000', resourceType: 'accommodation',
-      metadata: { username: 'admin', owner: 'admin', field: 'ownership', fields: ['ownedFrom', 'ownedThrough', 'period', 'share', 'typeOfGood'] }
+      metadata: { owner: 'urn:uuid:admin', ownerUser: 'admin', field: 'ownership', fields: ['ownedFrom', 'ownedThrough', 'period', 'share', 'typeOfGood'] }
     });
     expect(JSON.stringify(audits[0])).not.toContain('2026-10-01'); // names, never values
     expect(result).toEqual({ changed: true, at: { type: 'owner', index: 0, expected: JSON.stringify((ownershipOf('admin') as unknown[])[0]) } });
