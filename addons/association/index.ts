@@ -24,7 +24,7 @@ import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import reviewRoutes from './routes/review.js';
-import OccupancyManager, { type ApprovalDoors, type EntryRef, type OccupancyAuditRecord, type OccupancyDb, type OccupancyManagerOptions, type OccupancySubmission } from './managers/OccupancyManager.js';
+import OccupancyManager, { type ApprovalDoors, type EntryRef, type IdentityDoors, type OccupancyAuditRecord, type OccupancyDb, type OccupancyManagerOptions, type OccupancySubmission } from './managers/OccupancyManager.js';
 import { ASSOCIATION_LEDGER_TABLE, ASSOCIATION_MIGRATIONS } from './managers/migrations.js';
 import { OCCUPANCY_FORM_ID, occupancyForm } from './forms/occupancyForm.js';
 
@@ -52,6 +52,10 @@ interface AuthManagerLike {
 interface IdentityManagerLike {
   getByUserIdentifier(ctx: ActorContext, username: string): Promise<{ '@id': string; contactPoint?: unknown[] } | null>;
   update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<unknown>;
+  /** #2041, ngdpbase 5.34.0: the @id behind a username, or null (no account, or a store that cannot answer). */
+  identityIdOf: IdentityDoors['identityIdOf'];
+  canAnswer: IdentityDoors['canAnswer'];
+  convertReference: IdentityDoors['convertReference'];
 }
 interface DatabaseManagerLike {
   isEnabled(): boolean;
@@ -75,10 +79,12 @@ interface FormsAddonLike {
 let accommodations: AccommodationManagerLike | null = null;
 let occupancy: OccupancyManager | null = null;
 let unavailable: string | null = 'not registered yet';
+/** Set while the start-up conversion of stored submitters is postponed or has orphans (#2042); counts only. */
+let attention: string | null = null;
 
 const AssociationAddon = {
   name: 'association',
-  version: '0.2.0',
+  version: '0.3.0',
   description: "A unit owners association's rules, on top of accommodation",
   author: 'jwilleke',
   // accommodation loads first; without it this add-on does not load.
@@ -142,8 +148,29 @@ const AssociationAddon = {
         return auth ? auth.inviteUser(ctx, username) : { outcome: 'not-sent', reason: 'AuthManager is not available' };
       }
     } : undefined;
-    occupancy = new OccupancyManager({ db, decide, recordAudit, host, approval, checkEntry: (entry) => residency.checkEntry(entry), notifyReviewers });
+    const systemContext = (): ActorContext => host.systemContext('association: identity @id for a submitter (#2042)');
+    occupancy = new OccupancyManager({ db, decide, recordAudit, host, approval, checkEntry: (entry) => residency.checkEntry(entry), notifyReviewers,
+      ...(persons ? { identities: {
+        identityIdOf: (ctx, username) => persons.identityIdOf(ctx, username),
+        canAnswer: () => persons.canAnswer(),
+        convertReference: (ctx, stored) => persons.convertReference(ctx, stored)
+      }, systemContext } : {}) });
     engine.registerManager('OccupancyManager', occupancy);
+    // Stored submitters that are still usernames become identity @ids, once (#2042).
+    attention = null;
+    if (persons) {
+      const done = await occupancy.convertSubmitters();
+      if (done.postponed) {
+        attention = 'submitters not converted to identity @ids: identity store unavailable, conversion postponed to the next start';
+        logger.warn(`[association] ${attention}`);
+      } else {
+        if (done.converted > 0) logger.info(`[association] Converted ${done.converted} submitter(s) from username to identity @id`);
+        if (done.orphans > 0) {
+          attention = `${done.orphans} submission(s) are orphaned: their submitter's username has no account`;
+          logger.warn(`[association] ${attention}`);
+        }
+      }
+    }
     unavailable = null;
 
     const formsData = engine.getManager<FormsDataManagerLike>('FormsDataManager');
@@ -169,13 +196,14 @@ const AssociationAddon = {
 
   async status(): Promise<{ healthy: boolean; message: string }> {
     if (unavailable || !accommodations || !occupancy) return { healthy: false, message: unavailable ?? 'not loaded' };
-    return { healthy: true, message: `On ${accommodations.count()} accommodation(s); ${occupancy.pendingCount()} occupancy submission(s) waiting for review` };
+    return { healthy: true, message: `On ${accommodations.count()} accommodation(s); ${occupancy.pendingCount()} occupancy submission(s) waiting for review${attention ? `; ${attention}` : ''}` };
   },
 
   async shutdown(): Promise<void> {
     accommodations = null;
     occupancy = null;
     unavailable = 'not registered yet';
+    attention = null;
   }
 };
 

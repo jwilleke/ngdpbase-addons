@@ -12,7 +12,7 @@ const defaults = JSON.parse(readFileSync(new URL('../config/default-config.json'
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { ngdpbase: { slug: string; aboutPage: string } };
 
 /** Accommodation's managers, a database and, unless `forms` is false, the forms add-on. */
-function fakeEngine(options: { database?: boolean; forms?: boolean } = {}) {
+function fakeEngine(options: { database?: boolean; forms?: boolean; seed?: string[]; identities?: Record<string, unknown> } = {}) {
   const managers = new Map<string, unknown>();
   const shipped: unknown[][] = [];
   const handlers = new Map<string, (submission: unknown, context: { engine: unknown; req: unknown }) => Promise<unknown>>();
@@ -26,12 +26,16 @@ function fakeEngine(options: { database?: boolean; forms?: boolean } = {}) {
     isEnabled: () => options.database !== false,
     openAddonDatabase: (owner: string, o: { migrations: never; ledgerTable: string }) => {
       const db = openAddonTestDatabase(owner, o, { slug: 'association', defaults });
+      for (const by of options.seed ?? []) {
+        db.prepare(`INSERT INTO association_occupancy_submissions (id, received_at, submitted_by, unit, entry_type, answers) VALUES (?, 't', ?, 'u', 'owner', '{}')`).run(`s-${by}`, by);
+      }
       opened.push(db);
       return db;
     }
   });
   managers.set('PolicyDecisionPoint', { usersHolding: async () => [], decide: async () => ({ permit: true }) });
   managers.set('AddonsManager', { registerDashboardCard: (card: unknown) => { cards.push(card); } });
+  if (options.identities) managers.set('IdentityManager', options.identities);
   if (options.forms !== false) {
     managers.set('FormsDataManager', { registerShippedForm: async (...a: unknown[]) => { shipped.push(a); return 'saved'; } });
     managers.set('FormsAddon', { registerHandler: (id: string, h: never) => { handlers.set(id, h); } });
@@ -91,6 +95,28 @@ describe('association register()', () => {
     expect(await AssociationAddon.status()).toMatchObject({ healthy: true });
     await AssociationAddon.shutdown();
     (engine.opened[0] as { close(): void }).close();
+  });
+
+  test('converts stored submitters at start-up (#2042), reports orphans, and postpones when the identity store cannot answer', async () => {
+    const identities = {
+      canAnswer: () => true,
+      identityIdOf: async () => null,
+      convertReference: async (_c: unknown, stored: string) => stored === 'lee' ? { value: 'urn:uuid:lee', outcome: 'converted' } : { value: `orphan:${stored}`, outcome: 'orphaned' }
+    };
+    const engine = fakeEngine({ seed: ['lee', 'gone'], identities });
+    await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
+    const db = engine.opened[0] as { prepare(sql: string): { all(): unknown[] }; close(): void };
+    expect(db.prepare('SELECT submitted_by, submitter_name FROM association_occupancy_submissions ORDER BY id').all())
+      .toEqual([{ submitted_by: 'orphan:gone', submitter_name: 'gone' }, { submitted_by: 'urn:uuid:lee', submitter_name: 'lee' }]);
+    expect(await AssociationAddon.status()).toMatchObject({ message: expect.stringContaining('1 submission(s) are orphaned') });
+    await AssociationAddon.shutdown();
+    db.close();
+
+    const down = fakeEngine({ seed: ['lee'], identities: { ...identities, canAnswer: () => false } });
+    await AssociationAddon.register(down, {}, buildAddonHost('association', defaults));
+    expect(await AssociationAddon.status()).toMatchObject({ healthy: true, message: expect.stringContaining('conversion postponed to the next start') });
+    await AssociationAddon.shutdown();
+    (down.opened[0] as { close(): void }).close();
   });
 
   test('does not load without accommodation', async () => {

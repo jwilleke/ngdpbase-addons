@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { ActorContext } from '@jwilleke/ngdpbase-types';
+import type { IdentityDoors } from '../managers/OccupancyManager.js';
 import { buildAddonHost, openAddonTestDatabase } from '@jwilleke/ngdpbase-types/testing';
 import OccupancyManager, { type OccupancyAuditRecord, type OccupancyDb } from '../managers/OccupancyManager.js';
 import { ASSOCIATION_LEDGER_TABLE, ASSOCIATION_MIGRATIONS } from '../managers/migrations.js';
@@ -100,15 +101,31 @@ describe('OccupancyManager review (#33)', () => {
   let calls: string[];
   let fail: Record<string, string>;
   let accounts: Array<{ username: string; email?: string }>;
+  let known: Record<string, string>;
+  let answers: boolean;
   const reviewer = { username: 'board.member', roles: [], isAuthenticated: true, ipAddress: '192.0.2.5' } as unknown as ActorContext;
   const stranger = { username: 'nobody', roles: ['admin'], isAuthenticated: true } as unknown as ActorContext;
 
   beforeEach(() => {
     db = openAddonTestDatabase('association', { migrations: ASSOCIATION_MIGRATIONS as never, ledgerTable: ASSOCIATION_LEDGER_TABLE }, { slug: 'association', defaults });
     audits = []; calls = []; fail = {};
+    known = { 'lee.renter': 'urn:uuid:lee' }; answers = true;
     accounts = [{ username: 'lee.renter', email: 'Lee@Example.org' }];
   });
   afterEach(() => { db.close(); });
+
+  // core's IdentityManager, as far as this add-on uses it (identityIdOf, canAnswer, convertReference)
+  const identities: IdentityDoors = {
+    identityIdOf: async (_c, username) => (answers ? known[username] ?? null : null),
+    canAnswer: () => answers,
+    convertReference: async (_c, stored) => {
+      if (!stored || stored.startsWith('urn:')) return { value: stored, outcome: 'kept' };
+      if (stored.startsWith('orphan:')) return { value: stored, outcome: 'orphan' };
+      if (stored === 'anonymous') return { value: stored, outcome: 'kept' };
+      if (!answers) throw new Error('identity store down');
+      return known[stored] ? { value: known[stored], outcome: 'converted' } : { value: `orphan:${stored}`, outcome: 'orphaned' };
+    }
+  };
 
   function open(): OccupancyManager {
     return new OccupancyManager({
@@ -117,6 +134,8 @@ describe('OccupancyManager review (#33)', () => {
       recordAudit: async (record) => { calls.push(`audit:${record.metadata['entryType'] ? record.action : ''}:${record.result}`); audits.push(record); },
       checkEntry: () => null,
       notifyReviewers: async () => undefined,
+      identities,
+      systemContext: () => ({ username: 'system', roles: [], isAuthenticated: true } as unknown as ActorContext),
       approval: {
         searchUsers: async (c, email) => { calls.push(`search:${email}`); expect(c).toBe(reviewer); return accounts; },
         addEntry: async (c, username, entry) => {
@@ -248,7 +267,9 @@ describe('OccupancyManager review (#33)', () => {
         'search:test.visitor@example.org', 'audit:occupancy-approve:success',
         'create:test.visitor:test.visitor@example.org:Test Visitor', 'invite:test.visitor', 'add:test.visitor:owner:100'
       ]);
-      expect(audits[0].metadata).toMatchObject({ username: 'test.visitor', newAccount: true });
+      // no identity yet when the first record is written: the name stands in `owner`
+      expect(audits[0].metadata).toMatchObject({ owner: 'test.visitor', ownerUser: 'test.visitor', newAccount: true });
+      expect(audits[0].metadata).not.toHaveProperty('username');
       expect(status('n')).toBe('approved');
     });
 
@@ -276,6 +297,149 @@ describe('OccupancyManager review (#33)', () => {
       expect(calls.some(c => c.startsWith('add') || c.startsWith('person'))).toBe(false);
       expect(audits.map(a => a.result)).toEqual(['success', 'failure']);
       expect(status('n')).toBe('pending');
+    });
+  });
+});
+
+describe('identity @ids (#2042)', () => {
+  // These share the review describe's wiring through a small copy, so each rule is tested alone.
+  let db: OccupancyDb & { close(): void; prepare(sql: string): { all(...p: unknown[]): unknown[]; run(...p: unknown[]): unknown; get(...p: unknown[]): unknown } };
+  let audits: OccupancyAuditRecord[];
+  let known: Record<string, string>;
+  let answers: boolean;
+  let lookups: string[];
+  const reviewer = { username: 'board.member', roles: [], isAuthenticated: true } as unknown as ActorContext;
+  const system = { username: 'system', roles: [], isAuthenticated: true } as unknown as ActorContext;
+
+  beforeEach(() => {
+    db = openAddonTestDatabase('association', { migrations: ASSOCIATION_MIGRATIONS as never, ledgerTable: ASSOCIATION_LEDGER_TABLE }, { slug: 'association', defaults });
+    audits = []; lookups = []; known = { 'lee.renter': 'urn:uuid:lee' }; answers = true;
+  });
+  afterEach(() => { db.close(); });
+
+  const identities: IdentityDoors = {
+    identityIdOf: async (_c, username) => { lookups.push(username); return answers ? known[username] ?? null : null; },
+    canAnswer: () => answers,
+    convertReference: async (_c, stored) => {
+      if (!stored || stored.startsWith('urn:')) return { value: stored, outcome: 'kept' };
+      if (stored.startsWith('orphan:')) return { value: stored, outcome: 'orphan' };
+      if (stored === 'anonymous') return { value: stored, outcome: 'kept' };
+      if (!answers) throw new Error('identity store down');
+      return known[stored] ? { value: known[stored], outcome: 'converted' } : { value: `orphan:${stored}`, outcome: 'orphaned' };
+    }
+  };
+  function open(withIdentities = true): OccupancyManager {
+    return new OccupancyManager({
+      db, host, identities: withIdentities ? identities : undefined, systemContext: () => system,
+      decide: async () => ({ permit: true, applicable: true, reason: 'test' }),
+      recordAudit: async (record) => { audits.push(record); },
+      checkEntry: () => null,
+      notifyReviewers: async () => undefined,
+      approval: {
+        searchUsers: async () => [{ username: 'lee.renter', email: 'lee@example.org' }],
+        addEntry: async () => ({ type: 'owner', index: 0, expected: '{}' }),
+        removeEntry: async () => undefined,
+        findPerson: async (_c, username) => (username === 'lee.renter' ? { id: 'urn:uuid:lee', contactPoint: [] } : null),
+        updatePerson: async () => undefined,
+        createUser: async (_c, u) => ({ username: u.username }),
+        inviteUser: async () => ({ outcome: 'sent' }),
+        contactDetails: () => ({ contactPoint: [] })
+      }
+    });
+  }
+  const stored = () => db.prepare('SELECT id, submitted_by, submitter_name FROM association_occupancy_submissions ORDER BY id').all() as Array<Record<string, string>>;
+  const insert = (id: string, by: string) => db.prepare(`INSERT INTO association_occupancy_submissions (id, received_at, submitted_by, unit, entry_type, answers) VALUES (?, 't', ?, 'u', 'owner', '{}')`).run(id, by);
+
+  test('a new submission stores the submitter by @id and keeps the name for showing', async () => {
+    const m = open();
+    await m.queue(reviewer, { id: 'a', submittedBy: 'lee.renter', data: ANSWERS });
+    expect(stored()).toEqual([{ id: 'a', submitted_by: 'urn:uuid:lee', submitter_name: 'lee.renter' }]);
+    expect((await m.pending(reviewer))[0]).toMatchObject({ submittedBy: 'urn:uuid:lee', submitterName: 'lee.renter' });
+  });
+
+  test('an @id from the forms add-on is kept, with the name it sent', async () => {
+    await open().queue(reviewer, { id: 'a', submittedBy: 'urn:uuid:lee', submitterName: 'lee.renter', data: ANSWERS });
+    expect(stored()).toEqual([{ id: 'a', submitted_by: 'urn:uuid:lee', submitter_name: 'lee.renter' }]);
+    expect(lookups).toEqual([]);
+  });
+
+  test.each([['anonymous'], ['no.account'], ['orphan:gone']])('%s is stored as given (no account, anonymous or an orphan)', async (by) => {
+    await open().queue(reviewer, { id: 'a', submittedBy: by, data: ANSWERS });
+    expect(stored()[0]).toMatchObject({ submitted_by: by, submitter_name: by });
+  });
+
+  test('an identity store that cannot answer still keeps the submission, with the name', async () => {
+    answers = false;
+    await open().queue(reviewer, { id: 'a', submittedBy: 'lee.renter', data: ANSWERS });
+    expect(stored()[0]).toMatchObject({ submitted_by: 'lee.renter' });
+  });
+
+  test('approve audits owner as the @id and ownerUser as the username', async () => {
+    const m = open();
+    await m.queue(reviewer, { id: 'a', submittedBy: 'anonymous', data: ANSWERS });
+    await m.approve(reviewer, 'a', { share: 100 });
+    expect(audits.filter(a => a.action === 'occupancy-approve').map(a => a.metadata)).toEqual([
+      expect.objectContaining({ owner: 'urn:uuid:lee', ownerUser: 'lee.renter' })
+    ]);
+  });
+
+  test('approve still works with no identity door: the reviewer\'s read of the record gives the @id', async () => {
+    const m = open(false);
+    await m.queue(reviewer, { id: 'a', submittedBy: 'anonymous', data: ANSWERS });
+    await m.approve(reviewer, 'a', { share: 100 });
+    expect(audits.find(a => a.action === 'occupancy-approve')!.metadata).toMatchObject({ owner: 'urn:uuid:lee', ownerUser: 'lee.renter' });
+  });
+
+  describe('start-up conversion', () => {
+    test('usernames become @ids, no account becomes orphan:<name>, the rest is left; the name is kept', async () => {
+      insert('1', 'lee.renter'); insert('2', 'gone.user'); insert('3', 'anonymous'); insert('4', 'urn:uuid:other'); insert('5', 'orphan:old');
+      expect(await open().convertSubmitters()).toEqual({ converted: 1, orphans: 2, postponed: false });
+      expect(stored()).toEqual([
+        { id: '1', submitted_by: 'urn:uuid:lee', submitter_name: 'lee.renter' },
+        { id: '2', submitted_by: 'orphan:gone.user', submitter_name: 'gone.user' },
+        { id: '3', submitted_by: 'anonymous', submitter_name: '' },
+        { id: '4', submitted_by: 'urn:uuid:other', submitter_name: '' },
+        { id: '5', submitted_by: 'orphan:old', submitter_name: '' }
+      ]);
+    });
+
+    test('a second start writes nothing', async () => {
+      insert('1', 'lee.renter'); insert('2', 'gone.user');
+      await open().convertSubmitters();
+      const before = JSON.stringify(stored());
+      expect(await open().convertSubmitters()).toEqual({ converted: 0, orphans: 1, postponed: false });
+      expect(JSON.stringify(stored())).toBe(before);
+    });
+
+    test('a later account with an orphan\'s name does not take the submission over', async () => {
+      insert('2', 'gone.user');
+      await open().convertSubmitters();
+      known['gone.user'] = 'urn:uuid:new';
+      await open().convertSubmitters();
+      expect(stored()[0]).toMatchObject({ submitted_by: 'orphan:gone.user' });
+    });
+
+    test('an identity store that cannot answer postpones the whole pass and writes nothing', async () => {
+      insert('1', 'lee.renter'); insert('2', 'gone.user');
+      answers = false;
+      expect(await open().convertSubmitters()).toEqual({ converted: 0, orphans: 0, postponed: true });
+      expect(stored().map(r => r.submitted_by)).toEqual(['lee.renter', 'gone.user']);
+    });
+
+    test('a store that fails midway leaves the rest for the next start', async () => {
+      insert('1', 'lee.renter'); insert('2', 'gone.user');
+      const m = open();
+      let n = 0;
+      const real = identities.convertReference;
+      identities.convertReference = async (c, v) => { if (++n === 2) throw new Error('died'); return real(c, v); };
+      try { expect(await m.convertSubmitters()).toMatchObject({ postponed: true, converted: 1 }); } finally { identities.convertReference = real; }
+      expect(stored().map(r => r.submitted_by)).toEqual(['urn:uuid:lee', 'gone.user']);
+    });
+
+    test('with no identity store at all nothing happens', async () => {
+      insert('1', 'lee.renter');
+      expect(await open(false).convertSubmitters()).toEqual({ converted: 0, orphans: 0, postponed: false });
+      expect(stored()[0].submitted_by).toBe('lee.renter');
     });
   });
 });

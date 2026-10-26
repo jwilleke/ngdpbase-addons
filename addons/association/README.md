@@ -105,7 +105,16 @@ waiting, with their answers ([#33](https://github.com/jwilleke/ngdpbase-addons/i
   `association-review`.
 - Not yet: applying a signed-in owner's or occupant's own-unit submission directly ([#35](https://github.com/jwilleke/ngdpbase-addons/issues/35)).
 - The details use core's own schema.org types (`ContactPointEntry`: a `ContactPoint` or a
-  `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.30.0 or later (IdentityManager, `identity-manage`).
+  `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.34.0 or later (IdentityManager, `identity-manage`, and `identityIdOf` and `convertReference` for identity `@id`s, below).
+
+## Who a record refers to
+
+From ngdpbase 5.34.0 ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041), step 7 of the identity model, [#2042](https://github.com/jwilleke/ngdpbase/issues/2042)) anything that refers to an identity stores its `@id`, never a username.
+
+- __Audit rows:__ `occupancy-approve` writes `metadata.owner` as the owner's identity `@id` and `metadata.ownerUser` as their username (`IdentityManager.identityIdOf`, which never throws for a store that is down). A new account has no `@id` when the record is written first, and an unanswered lookup is null: `owner` is then the username, and the approval still completes. Rows written before this keep `owner` as the username. `occupancy-submit` and `occupancy-reject` name no owner, only the acting user, as before.
+- __Submissions__ keep `submitted_by` as the submitter's identity `@id` (the forms add-on sends it; this add-on looks a bare username up itself if it is sent one). `anonymous`, `orphan:<name>` and a name with no account are stored as given. The name is kept beside it in `submitter_name` for the review page.
+- __Start-up conversion__, once, for submissions kept before this: each `submitted_by` that is still a username goes through `IdentityManager.convertReference` under the system context, one write per submission, and the name moves to `submitter_name`. A name with no account becomes `orphan:<name>`, so a later account with that name never becomes the submitter. `@id`s, orphans and `anonymous` are skipped, so a second start writes nothing. Counts only are logged. When the identity store cannot answer, the whole pass is postponed to the next start. Orphans and a postponed pass show in the add-on's status on Admin → Add-ons.
+- Nothing else is stored by user: reviewers are looked up from `association-review` at the time and told by notification, and the approver is the acting user of the audit row.
 
 ## Develop
 

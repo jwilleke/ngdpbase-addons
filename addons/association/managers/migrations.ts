@@ -40,4 +40,12 @@ const OCCUPANCY_SUBMISSIONS: AssociationMigration = {
   }
 };
 
-export const ASSOCIATION_MIGRATIONS: AssociationMigration[] = [OCCUPANCY_SUBMISSIONS];
+const SUBMITTER_NAME: AssociationMigration = {
+  id: '20261026120000',
+  description: "The submitter's name kept for showing, beside submitted_by, which holds their identity @id (#2042)",
+  up: (db) => {
+    db.exec(`ALTER TABLE association_occupancy_submissions ADD COLUMN submitter_name TEXT NOT NULL DEFAULT ''`);
+  }
+};
+
+export const ASSOCIATION_MIGRATIONS: AssociationMigration[] = [OCCUPANCY_SUBMISSIONS, SUBMITTER_NAME];
