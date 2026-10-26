@@ -8,7 +8,7 @@
     <div class="alert alert-warning" data-testid="link-problems">
       <strong>Entries that need fixing</strong>
       <ul class="mb-0">
-        <% problems.forEach(function (p) { %><li><%= p %></li><% }) %>
+        <% problems.forEach(function (p) { %><li><% if (p.unit) { %><a href="/addons/accommodation/residents/<%= encodeURIComponent(p.unit) %>"><%= p.label %></a>: <% } %><%= p.text %></li><% }) %>
       </ul>
     </div>
   <% } %>

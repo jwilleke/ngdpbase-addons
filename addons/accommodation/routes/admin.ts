@@ -38,6 +38,13 @@ function unitLabel(accommodations: AccommodationManager, id: string): string {
   return street ? `${street} (${id})` : id;
 }
 
+/** Two street addresses as people find them: by street, then house number ("2 Eagle Dr" before "10 Eagle Dr"). */
+function byStreet(a: string, b: string): number {
+  const [na, ...sa] = a.split(' ');
+  const [nb, ...sb] = b.split(' ');
+  return sa.join(' ').localeCompare(sb.join(' ')) || (Number(na) || 0) - (Number(nb) || 0);
+}
+
 /** A form value as a trimmed string; anything else is empty. */
 function text(body: Record<string, unknown>, name: string): string {
   const value = body[name];
@@ -114,12 +121,14 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           // by street, then house number, as people find them
           units: units
             .map(u => ({ id: u.id, label: unitLabel(accommodations, u.id), address: unitAddress(u), ...(roster.get(u.id) ?? { owners: [], occupants: [] }) }))
-            .sort((a, b) => {
-              const [na, ...sa] = (a.address?.streetAddress ?? a.id).split(' ');
-              const [nb, ...sb] = (b.address?.streetAddress ?? b.id).split(' ');
-              return sa.join(' ').localeCompare(sb.join(' ')) || (Number(na) || 0) - (Number(nb) || 0) || a.id.localeCompare(b.id);
-            }),
-          problems: await residency.linkProblems(actor),
+            .sort((a, b) => byStreet(a.address?.streetAddress ?? a.id, b.address?.streetAddress ?? b.id) || a.id.localeCompare(b.id)),
+          // A unit's problem names the unit by its address, linked to its page; others as written.
+          problems: (await residency.linkProblems(actor)).map(p => {
+            const unit = /^unit (\S+): (.*)$/.exec(p);
+            return unit && accommodations.get(unit[1])
+              ? { unit: unit[1], label: unitLabel(accommodations, unit[1]), street: unitAddress(accommodations.get(unit[1]))?.streetAddress ?? unit[1], text: unit[2] }
+              : { text: p };
+          }).sort((a, b) => (a.street && b.street ? byStreet(a.street, b.street) : a.street ? -1 : b.street ? 1 : 0)),
           unbilled: residency.withoutBilling(units.map(u => u.id))
         });
       } catch (err) {
