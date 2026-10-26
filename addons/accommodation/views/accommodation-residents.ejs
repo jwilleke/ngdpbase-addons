@@ -1,8 +1,8 @@
 <%- include('header', { title: 'Owners and occupants', currentUser }) %>
 
 <div class="container-fluid mt-4">
-  <h2 class="mb-1"><i class="fas fa-house-user me-2"></i>Owners and occupants</h2>
-  <p class="text-muted">Who owns and who lives in each accommodation today. Open one to add, end, correct or remove an entry.</p>
+  <%- include('accommodation-page-heading', { icon: 'fa-house-user', title: 'Owners and occupants', back: { href: '/admin', label: 'Back to Dashboard' } }) %>
+  <p class="text-muted">Who owns and who lives in each accommodation today. Open one to see its billing and change its owners and occupants.</p>
 
   <% if (problems.length > 0) { %>
     <div class="alert alert-warning" data-testid="link-problems">
@@ -23,12 +23,19 @@
   <% if (units.length === 0) { %>
     <div class="alert alert-info">No accommodations yet.</div>
   <% } else { %>
+    <div class="row mb-2"><div class="col-md-6">
+      <div class="input-group">
+        <span class="input-group-text"><i class="fas fa-search"></i></span>
+        <input type="search" id="resident-search" class="form-control" placeholder="Search by address, parcel or name…" aria-label="Search accommodations and residents">
+      </div>
+    </div></div>
+    <p class="small text-muted mb-2" id="resident-search-count" aria-live="polite"></p>
     <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle">
+      <table class="table table-sm table-hover align-middle" id="resident-table">
         <thead><tr><th>Accommodation</th><th>Owners</th><th>Occupants</th></tr></thead>
         <tbody>
           <% units.forEach(function (unit) { %>
-            <tr>
+            <tr data-search="<%= [unit.label].concat(unit.owners.map(function (o) { return o.name; }), unit.occupants.map(function (o) { return o.name; })).join(' ').toLowerCase() %>">
               <td><a href="/addons/accommodation/residents/<%= encodeURIComponent(unit.id) %>"><%= unit.label %></a><% if (unbilled.indexOf(unit.id) !== -1) { %> <span class="badge bg-danger">no billing address</span><% } %></td>
               <td><% if (unit.owners.length > 0) { %><%= unit.owners.map(function (o) { return o.name; }).join(', ') %><% } else { %><span class="text-danger">No current owner</span><% } %></td>
               <td><% if (unit.occupants.length > 0) { %><%= unit.occupants.map(function (o) { return o.name; }).join(', ') %><% } else { %><span class="text-muted">None</span><% } %></td>
@@ -39,5 +46,27 @@
     </div>
   <% } %>
 </div>
+
+<script nonce="<%= locals.cspNonce %>">
+  // Narrows the list as you type, in the page: nothing typed goes to the server or the URL.
+  (function () {
+    var box = document.getElementById('resident-search');
+    var count = document.getElementById('resident-search-count');
+    if (!box) return;
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#resident-table tbody tr'));
+    function filter() {
+      var words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
+      var shown = 0;
+      rows.forEach(function (row) {
+        var text = row.getAttribute('data-search') || '';
+        var match = words.every(function (w) { return text.indexOf(w) !== -1; });
+        row.hidden = !match;
+        if (match) shown++;
+      });
+      count.textContent = words.length ? shown + ' of ' + rows.length + ' shown' : '';
+    }
+    box.addEventListener('input', filter);
+  })();
+</script>
 
 <%- include('footer') %>

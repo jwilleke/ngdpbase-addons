@@ -2,8 +2,7 @@
 
 <% var action = '/addons/accommodation/residents/' + encodeURIComponent(parcel) + '/change'; %>
 <div class="container-fluid mt-4">
-  <p class="mb-1"><a href="/addons/accommodation/residents"><i class="fas fa-arrow-left me-1"></i>Owners and occupants</a></p>
-  <h2 class="mb-3"><i class="fas fa-house-user me-2"></i><%= label %></h2>
+  <div class="mb-3"><%- include('accommodation-page-heading', { icon: 'fa-house-user', title: label, back: { href: '/addons/accommodation/residents', label: 'Back to Owners and occupants' } }) %></div>
 
   <% if (flash === 'saved') { %>
     <div class="alert alert-success" data-testid="flash-saved">Saved. The owner and occupant roles follow it when the roles job has run (Admin → Scheduled Jobs).</div>

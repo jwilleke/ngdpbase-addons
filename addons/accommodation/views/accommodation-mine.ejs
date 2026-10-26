@@ -1,7 +1,7 @@
 <%- include('header', { title: 'My accommodation', currentUser }) %>
 
 <div class="container-fluid mt-4">
-  <h2 class="mb-1"><i class="fas fa-house-user me-2"></i>My accommodation</h2>
+  <%- include('accommodation-page-heading', { icon: 'fa-house-user', title: 'My accommodation', back: { href: '/profile', label: 'Back to Profile' } }) %>
   <p class="text-muted">The units you own or live in today.
     Your bills, payments and balance are on <a href="/profile">your profile</a>.</p>
 

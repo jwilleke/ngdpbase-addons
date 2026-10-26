@@ -1,0 +1,7 @@
+<%# A page's heading with its way back, in core's admin style (as on /admin/users). Locals: icon, title, back { href, label } or none. %>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+  <h2 class="mb-0"><i class="fas <%= icon %> me-2"></i><%= title %></h2>
+  <% if (typeof back !== 'undefined' && back) { %>
+    <a href="<%= back.href %>" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> <%= back.label %></a>
+  <% } %>
+</div>
