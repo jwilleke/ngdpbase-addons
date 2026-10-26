@@ -4,6 +4,7 @@
   "ngdpbase.addons.accommodation.provider": "json",
   "ngdpbase.addons.accommodation.categories": {},
   "ngdpbase.addons.accommodation.late-charges": {},
+  "ngdpbase.addons.accommodation.charge-lines": [],
   "ngdpbase.config.sensitive-values": {
     "ngdpbase.addons.accommodation.dataPath": "sensitive"
   },

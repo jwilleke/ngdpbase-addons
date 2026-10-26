@@ -34,11 +34,14 @@ import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types
 import type { Accommodation, AccommodationProvider } from '../providers/AccommodationProvider.js';
 import type { AccommodationCategory } from './categories.js';
 import type { LateChargeRule } from './lateCharges.js';
+import { splitIntoLines, type ChargeLine, type ChargeLineRule } from './chargeLines.js';
 import { unitAddress } from './billing.js';
 
 export interface AccommodationAssessment {
   accommodationCategory: string;
   amount: number;
+  /** The amount in its charge lines, adding up to it exactly (#44). */
+  lines: ChargeLine[];
   period: AccommodationCategory['period'];
   datedue: AccommodationCategory['datedue'];
 }
@@ -75,6 +78,8 @@ export interface AccommodationManagerOptions {
   provider: AccommodationProvider;
   categories: Map<string, AccommodationCategory>;
   lateCharges?: LateChargeRule[];
+  /** The site's charge lines (#44); none means one line per assessment. */
+  chargeLines?: ChargeLineRule[];
   /** ngdpbase's decision point. */
   decide: Decide;
   /** ngdpbase's recordAuditEvent for this add-on; throws when a refuse event cannot be written. */
@@ -105,6 +110,7 @@ export default class AccommodationManager {
   private accommodations = new Map<string, Accommodation>();
   private readonly provider: AccommodationProvider;
   private readonly categories: Map<string, AccommodationCategory>;
+  private readonly chargeLineRules: ChargeLineRule[];
   private readonly lateChargeRules: LateChargeRule[];
   private readonly bump: () => Promise<unknown>;
   private readonly decide: Decide;
@@ -117,6 +123,7 @@ export default class AccommodationManager {
     this.provider = options.provider;
     this.categories = options.categories;
     this.lateChargeRules = options.lateCharges ?? [];
+    this.chargeLineRules = options.chargeLines ?? [];
     this.bump = options.bump ?? (() => Promise.resolve());
     this.decide = options.decide;
     this.recordAudit = options.recordAudit;
@@ -168,7 +175,10 @@ export default class AccommodationManager {
   /** What the accommodation is assessed and when it falls due, from its category; null when it has no configured category. */
   assessment(id: string): AccommodationAssessment | null {
     const category = this.category(id);
-    return category ? { accommodationCategory: category.id, amount: category.assessment, period: category.period, datedue: category.datedue } : null;
+    return category ? {
+      accommodationCategory: category.id, amount: category.assessment, period: category.period, datedue: category.datedue,
+      lines: splitIntoLines(category.assessment, this.chargeLineRules, category.name)
+    } : null;
   }
 
   /**

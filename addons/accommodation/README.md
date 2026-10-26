@@ -278,6 +278,26 @@ empty; a site sets its own. The Fairways', as an example:
 
 A malformed entry stops the add-on loading and names the key.
 
+### Charge lines
+
+`ngdpbase.addons.accommodation.charge-lines` lists the parts an assessment is shown in on the invoice
+([#44](https://github.com/jwilleke/ngdpbase-addons/issues/44)); the add-on ships it empty, which makes
+each assessment one line named after its category. The Fairways':
+
+```json
+"ngdpbase.addons.accommodation.charge-lines": [
+  { "description": "Reserve Contribution", "percent": 61.49 },
+  { "description": "Operating Contribution" }
+]
+```
+
+- A line with a `percent` (above 0, below 100, at most two decimals) is that share of the assessment,
+  rounded to the nearest cent.
+- Exactly one line has no percent and takes the rest, so the lines always add up to the assessment:
+  a C Model's $410.00 is $252.11 + $157.89.
+- `AccommodationManager.assessment(id)` gives them as `lines: [{ description, amount }]` (whole cents);
+  accounting shows them as given. A malformed list stops the add-on loading and says why.
+
 How a charge is split across accommodations: today only by category, a fixed amount per category
 (The Fairways' practice). The two other bases in
 [#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) are not built: by percentage of interest

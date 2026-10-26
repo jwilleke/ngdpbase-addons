@@ -95,7 +95,8 @@ describe('AccommodationManager', () => {
   test('category and assessment come from the configured category', async () => {
     const m = await open();
     expect(m.category('66-00001.000')?.name).toBe('C Model');
-    expect(m.assessment('66-00002.000')).toEqual({ accommodationCategory: 'D', amount: 58400, period: 'monthly', datedue: 1 });
+    // with no charge lines set, one line named after the category (#44)
+    expect(m.assessment('66-00002.000')).toEqual({ accommodationCategory: 'D', amount: 58400, period: 'monthly', datedue: 1, lines: [{ description: 'D Model', amount: 58400 }] });
     expect(m.assessment('66-00003.000')).toBeNull(); // category Z is not configured
     expect(m.assessment('no-such-unit')).toBeNull();
   });

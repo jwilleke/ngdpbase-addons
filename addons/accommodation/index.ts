@@ -31,6 +31,7 @@ import AccommodationManager, { createProvider, type AccommodationAuditRecord, ty
 import ResidencyManager, { type RoleDoor, type UserRecord } from './managers/ResidencyManager.js';
 import { categoriesFrom } from './managers/categories.js';
 import { lateChargesFrom } from './managers/lateCharges.js';
+import { chargeLinesFrom } from './managers/chargeLines.js';
 import AccommodationPlugin from './plugins/AccommodationPlugin.js';
 
 interface PluginManagerLike { registerPlugin(name: string, plugin: unknown): Promise<void> }
@@ -113,6 +114,7 @@ const AccommodationAddon = {
       provider: await createProvider(providerName, dataPath),
       categories: categoriesFrom(config['categories']),
       lateCharges: lateChargesFrom(config['late-charges']),
+      chargeLines: chargeLinesFrom(config['charge-lines']),
       bump: () => engine.getManager<CacheManagerLike>('CacheManager')?.bump('AccommodationManager') ?? Promise.resolve(),
       // One change at a time, from read to save (#39).
       serial: host.keyedSerial()
