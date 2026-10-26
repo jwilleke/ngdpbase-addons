@@ -38,7 +38,7 @@ assessed.
 | Late charges | Site rules: days late, amount, simple annual interest, once or monthly; accounting applies them | [#10](https://github.com/jwilleke/ngdpbase-addons/issues/10) |
 | People | Every owner and occupant is an ngdpbase user; managers read users with the caller's context | [#11](https://github.com/jwilleke/ngdpbase-addons/issues/11) |
 | History | Dated links on the user record: `ownership` (`OwnershipInfo`, with an ownership `share`) and `occupies` (`Role`), an end a date or `"current"` | [#21](https://github.com/jwilleke/ngdpbase-addons/issues/21) |
-| Billing | One invoice per billing address, kept on the unit as billing parties with shares | [#14](https://github.com/jwilleke/ngdpbase-addons/issues/14) |
+| Billing | One invoice per billing address, kept on the unit with shares. Revised 2026-10-25: who owes is the owners by their shares; the unit's billing array is only where invoices go, free-form addresses, required on every unit | [#14](https://github.com/jwilleke/ngdpbase-addons/issues/14), [ngdpbase#2042](https://github.com/jwilleke/ngdpbase/issues/2042) |
 | How people are reached | Email, mail, text: a core preference per person | [ngdpbase#1969](https://github.com/jwilleke/ngdpbase/issues/1969) |
 | Permissions and roles | Their meaning: [addons/condo/docs/permissions.md](../../addons/condo/docs/permissions.md) | [#5](https://github.com/jwilleke/ngdpbase-addons/issues/5) |
 | Backup | ngdpbase backs up each add-on's `dataPath`; condo's interim code goes then | [#13](https://github.com/jwilleke/ngdpbase-addons/issues/13) |

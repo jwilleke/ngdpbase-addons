@@ -53,8 +53,9 @@ dated links to accommodations, in schema.org shapes
 ```
 
 - `ownership` entries are `OwnershipInfo`: `typeOfGood` is the accommodation's parcel, and `share` the
-  owner's percent of it (for joint owners' votes, not billing). On any date an accommodation's current
-  owners' shares add up to exactly 100; a sole owner writes 100.
+  owner's percent of it: what they owe of each invoice (see Billing) and their part of the unit's
+  vote. On any date an accommodation's current owners' shares add up to exactly 100; a sole owner
+  writes 100. Every owner is an account (operator, 2026-10-25).
 - `occupies` entries are `Role`: `roleName` is `occupant` (agent and tenant come later), and
   `accommodation` is the parcel. An owner who lives in the accommodation has an entry in each field.
 - Start dates are ISO dates. An end is an ISO date, or `"current"`. Both days count.
@@ -67,13 +68,18 @@ reason; users are read as that caller (`UserManager.searchUsers`), inactive acco
 `occupants(ctx, id)` returns the people living there, who are never billed. `history(ctx, id)`
 returns everyone the accommodation has had, with their dates. `withoutOwner(ctx, ids)` returns those
 of `ids` with no owner today (or on `{ on }`); the add-on's status on Admin → Add-ons names them, worked
-out each time it is shown.
+out each time it is shown. It also counts the accommodations with no usable billing address, which
+cannot be invoiced (`withoutBilling(ids)`).
 
 ### Recording who owns and lives in each accommodation
 
 __Admin → Owners and occupants__ (`/addons/accommodation/residents`, also a card on `/admin`) lists
 every accommodation with its current owners and occupants, and the entries that need fixing
 ([#28](https://github.com/jwilleke/ngdpbase-addons/issues/28)). Seeing it needs `accommodation-read`.
+Each accommodation is named by its street address with the parcel after it, "13 FAIRWAY DR
+(66-09960.017)", and the list is sorted by street, then house number. Accommodations with no usable
+billing address are counted at the top and marked, so they are fixed before a dues run. An
+accommodation's page shows the county's record, its billing, and its owners and occupants.
 Open an accommodation to change its entries, which needs `accommodation-manage`:
 
 - __Add a person__: one Name box, owner or occupant, from, and an owner's share. For example "Pat
@@ -253,6 +259,12 @@ empty; a site sets its own. The Fairways', as an example:
 - `datedue`: monthly, the day of the month (1–28); annual, `"MM-DD"`.
 
 A malformed entry stops the add-on loading and names the key.
+
+How a charge is split across accommodations: today only by category, a fixed amount per category
+(The Fairways' practice). The two other bases in
+[#22](https://github.com/jwilleke/ngdpbase-addons/issues/22) are not built: by percentage of interest
+(each accommodation's `floorSize` share of a total, the basis The Fairways' Declaration sets) and
+equal per accommodation.
 
 ## Late charges
 
