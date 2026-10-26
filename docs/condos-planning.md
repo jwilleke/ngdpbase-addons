@@ -41,6 +41,13 @@ this page gathers them and says what is still open. The wider condo design is
   (66-09960.000, 89 Fairway Dr) is the clubhouse and is not billed. Each unit's model, phase,
   building and original square feet come from the Shared-Fairways-Directory sheet, Reference tab,
   columns Q to V ([#22](https://github.com/jwilleke/ngdpbase-addons/issues/22)).
+- __Monthly invoice lines__ (2026-10-26): the Reserve Contribution is 61.49% of the rate, rounded
+  to the nearest cent, and the Operating Contribution is the rest, so the two add up to the rate
+  exactly. A $338.00: $207.84 + $130.16. C $410.00: $252.11 + $157.89. D $584.00: $359.10 + $224.90.
+  Those are the only two lines on the monthly invoice.
+- __Late payment fees__ (confirmed 2026-10-26): $10 once when an assessment is 10 days late; from 60
+  days late, $50 plus 8% a year simple interest on the overdue balance, charged monthly. They are
+  accommodation's late-charge rules, which accounting applies as their own invoice lines.
 - __Charges are split by category__ today. Percentage of interest (the Declaration's basis, from
   each unit's square feet) and equal per unit are not built.
 
@@ -48,8 +55,25 @@ this page gathers them and says what is still open. The wider condo design is
 
 - __The folio is the billable account; the unit is what is charged for.__
 - __Each unit always has exactly one folio assigned.__ New charges go on it.
-- __A new folio starts whenever any owner changes__: a sale, an owner added or removed, or a
-  transfer on death with no money changing hands. A billing-address change does not start one.
+- __A new folio starts whenever any owner or any share changes__: a sale, an owner added or removed,
+  a transfer on death with no money changing hands, or the same owners with new shares. A share is a
+  legal condition of ownership, and the record must show who owned what share when, in case it goes
+  to court. A billing-address change does not start one.
+- __A change of owners or shares requires approval__
+  ([#40](https://github.com/jwilleke/ngdpbase-addons/issues/40)). An owner asks through a request that
+  waits in core's review door for the treasurer, or whoever the site names; nothing changes until it
+  is approved, and an approved request starts a new folio.
+- __The treasurer or an admin may edit owners and shares directly__, and every such edit asks what it
+  is: __correcting a mistake__ (same folio: a wrong date, a wrong share, someone entered by error) or
+  __the ownership really changed__ (a new folio from its date).
+- __Accommodation keeps each unit's ownership periods as their own record__ (id, from, through, owners
+  with shares), because a correction and a real change can look the same in the owner entries. A real
+  change adds a period; a correction edits the period it belongs to.
+- __Starting periods__: each unit starts with one ownership period, its current owners from their
+  start date (for most, the county's newest sale date). Earlier owners are not in the data, so there
+  are no older periods or folios.
+- __Opening balances__: every folio starts at $0 for now. The treasurer must be able to enter a
+  balance brought forward on a folio later (an accounting treasurer action).
 - __A folio keeps its own balance.__ The previous owners' folio stops being assigned but stays open
   as a debtor while it owes (a bankruptcy, an estate). The new owners never carry the old debt.
 - __The unit's total__ is its folios added together. This supersedes accounting's D-047, one balance
@@ -57,12 +81,20 @@ this page gathers them and says what is still open. The wider condo design is
 
 ### Maintenance (2026-10-26)
 
-- __A new work-orders add-on__ (operator chose it over accommodation or accounting). A job records
-  the unit, the request, the vendor, the cost and who pays.
-- __Paid by the association__: recorded against the unit, so the unit keeps a maintenance history
-  whatever the folio.
-- __Asked for by the owners and not covered__: also charged to the unit's assigned folio as a charge
-  line.
+- __A new work-orders add-on__ (operator chose it over accommodation or accounting).
+- __The flow__:
+  1. An owner or the association turns in a request for a unit.
+  2. A work order is created and sent to a vendor.
+  3. The vendor fixes it and the work order closes; its date of service goes into the unit's
+     maintenance history, whatever the folio.
+  4. The vendor invoices the association; the bill goes into accounting's payables.
+  5. The association pays the vendor; the bill leaves payables and the money goes out of the bank
+     account.
+- __Work the owners pay for__ (asked for by them, not covered by the association): the association
+  generates an invoice to the unit's assigned folio only after the vendor has billed, for the
+  vendor's amount.
+- __Handing bills to accounting__: monthly dues stay as accounting asking each month; maintenance
+  hands over each step as it happens.
 
 ## Agreed with accounting, waiting to be built
 
@@ -71,7 +103,8 @@ this page gathers them and says what is still open. The wider condo design is
 - __Write-off or claim__ on a folio: a new treasurer action.
 - __From accommodation's `billing(ctx, unitId, { on })`__, accounting needs the ownership period:
   `{ period: { id, from, through? }, billing: [...], owners: [...] }`. The period id is stable while
-  the same owners hold the unit and new when any owner changes; a corrected date does not change it.
+  the same owners hold the same shares, and new when any owner or share changes; a corrected date
+  does not change it.
   Accounting maps the period id to its folio, opening the folio the first time it sees the id.
 - __A list of a unit's past periods__ (id, from, through, owners' `@id`s), so an old folio still shows
   who owes it. `ResidencyManager.history(ctx, id)` is close.
@@ -81,19 +114,20 @@ this page gathers them and says what is still open. The wider condo design is
   balance (this changes accounting's D-045); the board sees every folio, open ones flagged.
 - __Late charges__ run per folio.
 
-## Vendor bills: an open scope decision
+## Vendor bills (payables, decided 2026-10-26)
 
-Accounting has no payables. "Accounts payable (bills, vendors, scheduled payments)" is a stated
-non-goal for its phase 1 (its README and requirements §1), so adding it reverses that decision.
+The operator chose payables, which reverses accounting's phase-1 non-goal "Accounts payable (bills,
+vendors, scheduled payments)" (its README and requirements §1).
 
-- __Today__: money out is a ledger entry (`LedgerManager.postTransaction`, direction `out`) with its
-  fund, account, category, payee (an identity `@id` or free text) and memo, recorded when the money
-  actually leaves. The ledger holds only money that has moved (the operator's standing rule).
-- __If payables are added__: an unpaid vendor bill lives outside the ledger, in a payables module with
-  its own database, mirroring receivables. Paying it posts an ordinary money-out entry naming the bill.
-- __A unit tag on spending__ is not possible today; line details exist only on receipts. Accounting's
-  proposed change: allow the same line details on money-out entries, so work orders attaches
-  `{ unit, job }` and can list a unit's spending across every folio.
+- __A bill received__ is added to payables: the association owes it, and no money has moved, so it is
+  kept outside the ledger, in a payables module with its own store, as receivables are.
+- __The unit's maintenance__ is recorded on the date of service, from the work order, whenever the
+  bill arrives or is paid.
+- __A bill paid__ leaves payables, and the money is recorded going out of the bank account as an
+  ordinary money-out ledger entry (`LedgerManager.postTransaction`, direction `out`) naming the bill.
+- __Vendors__ are organizations in core's identity records with a Vendor affiliation.
+- __A unit tag on spending__: accounting's proposed change lets money-out entries carry line details,
+  as receipts do, so work orders attaches `{ unit, job }`.
 
 ## How other systems do it
 
@@ -122,15 +156,20 @@ Accounting has no generic intake today: it reads one configured accounts manager
 `lateCharges`) and one billing manager (`billing()`). It would answer a proposed interface once the
 operator settles it.
 
-## Open questions
+## The work, in issues (2026-10-26)
 
-- Does a change of shares alone, with the same owners, start a new folio?
-- Should accounting add vendor bills (payables), reversing its non-goal, or record spending only when
-  paid, with a unit tag on the payment?
-- When should an add-on hand its bills to accounting: when accounting asks (a billing run, as dues
-  work now), when something happens (a checkout, an order), or both?
-- Which issues to file, and at what priority: folios (accommodation's ownership periods, accounting's
-  folios), charge lines, the work-orders add-on, the generic bill.
+| Issue | What | Priority |
+| --- | --- | --- |
+| [#43](https://github.com/jwilleke/ngdpbase-addons/issues/43) | Ownership periods as their own record; billing() gives the period | P1 |
+| [#40](https://github.com/jwilleke/ngdpbase-addons/issues/40) | Owner and share requests through core's review door; blocked by #43 | P1 |
+| [#44](https://github.com/jwilleke/ngdpbase-addons/issues/44) | Charge lines: Reserve 61.49% and Operating | P1 |
+| ngdp-accounting-addons | Folios; payables with a unit tag on money out (filed there) | P1, P2 |
+| [#45](https://github.com/jwilleke/ngdpbase-addons/issues/45) | The work-orders add-on | P2 |
+| [#46](https://github.com/jwilleke/ngdpbase-addons/issues/46) | A generic bill any add-on can hand accounting | P2 |
+| [#47](https://github.com/jwilleke/ngdpbase-addons/issues/47) | Split charges by percentage of interest | P2 |
+
+The accommodation session works these with the operator and asks the accounting session anything that
+touches accounting.
 
 ## Test setup (local)
 
