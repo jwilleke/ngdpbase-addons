@@ -41,17 +41,17 @@ export const TEST_TODAY = '2026-10-22';
 /** Users as UserManager.searchUsers() gives them, with their dated links (#21). */
 export const SAMPLE_USERS: UserRecord[] = [
   { username: 'pat.example', displayName: 'Pat Example', email: 'pat@example.org',
-    ownership: [{ typeOfGood: '66-00001.000', ownedFrom: '2015-06-01', ownedThrough: 'current', share: 50 }] },
+    ownership: [{ typeOfGood: '66-00001.000', ownedFrom: '2015-06-01', ownedThrough: 'current', share: 50, period: 'p1-now' }] },
   { username: 'sam.example', displayName: 'Sam Example', ownership: [
-    { typeOfGood: '66-00001.000', ownedFrom: '2015-06-01', ownedThrough: 'current', share: 50 },
-    { typeOfGood: '66-00002.000', ownedFrom: '2020-03-01', ownedThrough: 'current', share: 50 }] },
+    { typeOfGood: '66-00001.000', ownedFrom: '2015-06-01', ownedThrough: 'current', share: 50, period: 'p1-now' },
+    { typeOfGood: '66-00002.000', ownedFrom: '2020-03-01', ownedThrough: 'current', share: 50, period: 'p2-now' }] },
   { username: 'lee.renter', displayName: 'Lee Renter',
     occupies: [{ roleName: 'occupant', accommodation: '66-00001.000', startDate: '2023-02-01', endDate: 'current' }] },
   { username: 'kim.both',
-    ownership: [{ typeOfGood: '66-00002.000', ownedFrom: '2020-03-01', ownedThrough: 'current', share: 50 }],
+    ownership: [{ typeOfGood: '66-00002.000', ownedFrom: '2020-03-01', ownedThrough: 'current', share: 50, period: 'p2-now' }],
     occupies: [{ roleName: 'occupant', accommodation: '66-00002.000', startDate: '2020-03-15', endDate: 'current' }] },
   { username: 'old.owner', displayName: 'Old Owner',
-    ownership: [{ typeOfGood: '66-00001.000', ownedFrom: '2008-01-10', ownedThrough: '2015-05-31', share: 100 }] },
+    ownership: [{ typeOfGood: '66-00001.000', ownedFrom: '2008-01-10', ownedThrough: '2015-05-31', share: 100, period: 'p1-old' }] },
   { username: 'moving.in', displayName: 'Moving In',
     occupies: [{ roleName: 'occupant', accommodation: '66-00001.000', startDate: '2026-11-01', endDate: 'current' }] },
   { username: 'broken.links', ownership: [{ typeOfGood: '66-00001.000', ownedFrom: '2020-01-01', ownedThrough: null, share: 100 }] },

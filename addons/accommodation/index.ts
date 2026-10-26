@@ -200,6 +200,15 @@ const AccommodationAddon = {
     } catch (err) {
       host.logger.error(`[accommodation] Billing could not be converted: ${err instanceof Error ? err.message : String(err)}`);
     }
+
+    // Every ownership entry names its ownership period (#43): entries saved before get one, once,
+    // under the system context; a unit's current owners share one. Counts only in the log.
+    try {
+      const tagged = await residency.tagPeriods(host.systemContext('accommodation: give ownership entries their period (#43)'));
+      if (tagged.tagged > 0) host.logger.info(`[accommodation] Ownership periods given to ${tagged.tagged} ownership entr(ies) on ${tagged.accounts} account(s).`);
+    } catch (err) {
+      host.logger.error(`[accommodation] Ownership periods could not be given: ${err instanceof Error ? err.message : String(err)}`);
+    }
     statusContext = () => host.systemContext('accommodation: status, accommodations with no current owner');
 
     // The roles job: a change on the admin page starts it at once (above); every day it gives

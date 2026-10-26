@@ -68,6 +68,7 @@ describe('accommodation register()', () => {
     engine.managers.set('UserManager', { searchUsers: async (_q: string, _o: unknown, ctx: unknown) => { asked.push(ctx); return SAMPLE_USERS; } });
     writeFileSync(path.join(dataPath, 'accommodations.json'), JSON.stringify(SAMPLE_ACCOMMODATIONS));
     await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
+    asked.length = 0; // start-up reads the users once to give ownership entries their period (#43)
     const status = await AccommodationAddon.status();
     // only 66-00001.000 keeps billing entries: the other two cannot be invoiced (ngdpbase#2042)
     expect(status.message).toBe('3 accommodation(s) loaded; 1 with no current owner: 66-00003.000; 2 with no usable billing address (they cannot be invoiced)');

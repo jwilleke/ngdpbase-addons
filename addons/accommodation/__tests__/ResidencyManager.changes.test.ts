@@ -70,11 +70,12 @@ describe('ResidencyManager.changeLink (#28)', () => {
   test('adds an owner entry, recorded first, then starts the roles job as the caller', async () => {
     const m = open();
     const result = await m.changeLink(treasurer, 'admin', { op: 'add', link: { parcel: '66-00003.000', type: 'owner', from: '2026-10-01', to: 'current', share: 100 } });
-    expect(ownershipOf('admin')).toEqual([{ typeOfGood: '66-00003.000', ownedFrom: '2026-10-01', ownedThrough: 'current', share: 100 }]);
+    // a unit with no owners: the first one starts a new ownership period (#43)
+    expect(ownershipOf('admin')).toEqual([{ typeOfGood: '66-00003.000', ownedFrom: '2026-10-01', ownedThrough: 'current', share: 100, period: expect.any(String) }]);
     expect(order).toEqual(['audit:success', 'write', 'roles-job']);
     expect(audits[0]).toMatchObject({
       user: 'treasurer', action: 'owner-add', resource: '66-00003.000', resourceType: 'accommodation',
-      metadata: { username: 'admin', owner: 'admin', field: 'ownership', fields: ['ownedFrom', 'ownedThrough', 'share', 'typeOfGood'] }
+      metadata: { username: 'admin', owner: 'admin', field: 'ownership', fields: ['ownedFrom', 'ownedThrough', 'period', 'share', 'typeOfGood'] }
     });
     expect(JSON.stringify(audits[0])).not.toContain('2026-10-01'); // names, never values
     expect(result).toEqual({ changed: true, at: { type: 'owner', index: 0, expected: JSON.stringify((ownershipOf('admin') as unknown[])[0]) } });
@@ -107,7 +108,8 @@ describe('ResidencyManager.changeLink (#28)', () => {
     const m = open();
     await m.changeLink(treasurer, 'lee.renter', { op: 'correct', at: at('lee.renter', 'occupant', 0), link: { parcel: '66-00001.000', type: 'owner', from: '2023-02-01', to: 'current', share: 50 } });
     expect(occupiesOf('lee.renter')).toEqual([]);
-    expect(ownershipOf('lee.renter')).toEqual([{ typeOfGood: '66-00001.000', ownedFrom: '2023-02-01', ownedThrough: 'current', share: 50 }]);
+    // an occupant made an owner joins the unit's ownership period (#43)
+    expect(ownershipOf('lee.renter')).toEqual([{ typeOfGood: '66-00001.000', ownedFrom: '2023-02-01', ownedThrough: 'current', share: 50, period: 'p1-now' }]);
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({ action: 'owner-correct', metadata: { field: 'ownership', movedFrom: 'occupies' } });
 
@@ -126,7 +128,7 @@ describe('ResidencyManager.changeLink (#28)', () => {
   test('removes an entry entered by mistake', async () => {
     const m = open();
     await m.changeLink(treasurer, 'sam.example', { op: 'remove', at: at('sam.example', 'owner', 1) });
-    expect(ownershipOf('sam.example')).toEqual([{ typeOfGood: '66-00001.000', ownedFrom: '2015-06-01', ownedThrough: 'current', share: 50 }]);
+    expect(ownershipOf('sam.example')).toEqual([{ typeOfGood: '66-00001.000', ownedFrom: '2015-06-01', ownedThrough: 'current', share: 50, period: 'p1-now' }]);
     expect(audits[0]).toMatchObject({ action: 'owner-remove', resource: '66-00002.000', metadata: { fields: [] } });
   });
 
@@ -321,7 +323,7 @@ describe('ResidencyManager.addNewPerson (operator, 2026-10-25)', () => {
     expect(await t.m.addNewPerson(treasurer, LINK, { name: 'Matthew K Weis' })).toEqual({ username: 'matthew.k.weis' });
     expect(t.made).toEqual([[treasurer, { username: 'matthew.k.weis', displayName: 'Matthew K Weis' }]]);
     expect(t.invited).toEqual([]);
-    expect(t.ownership('matthew.k.weis')).toEqual([{ typeOfGood: '66-00003.000', ownedFrom: '2016-11-23', ownedThrough: 'current', share: 100 }]);
+    expect(t.ownership('matthew.k.weis')).toEqual([{ typeOfGood: '66-00003.000', ownedFrom: '2016-11-23', ownedThrough: 'current', share: 100, period: expect.any(String) }]);
   });
 
   test('invites only when asked and there is an email', async () => {

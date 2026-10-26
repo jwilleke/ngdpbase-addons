@@ -45,7 +45,7 @@ dated links to accommodations, in schema.org shapes
 
 ```json
 "ownership": [
-  { "typeOfGood": "66-00001.000", "ownedFrom": "2012-05-01", "ownedThrough": "2020-08-31", "share": 100 }
+  { "typeOfGood": "66-00001.000", "ownedFrom": "2012-05-01", "ownedThrough": "2020-08-31", "share": 100, "period": "8f0c…" }
 ],
 "occupies": [
   { "roleName": "occupant", "accommodation": "66-00002.000", "startDate": "2021-01-15", "endDate": "current" }
@@ -56,6 +56,11 @@ dated links to accommodations, in schema.org shapes
   owner's percent of it: what they owe of each invoice (see Billing) and their part of the unit's
   vote. On any date an accommodation's current owners' shares add up to exactly 100; a sole owner
   writes 100. Every owner is an account (operator, 2026-10-25).
+- `period` names the entry's ownership period ([#43](https://github.com/jwilleke/ngdpbase-addons/issues/43)):
+  one stretch of the same owners with the same shares, which accounting bills as one folio. A unit's
+  period is the entries that share the id; on any day a unit's owners are in exactly one, and
+  `linkProblems` names any day they are not. Entries saved before it get one once at start-up: a
+  unit's current owners share one period, and ended entries one per stretch of the same dates.
 - `occupies` entries are `Role`: `roleName` is `occupant` (agent and tenant come later), and
   `accommodation` is the parcel. An owner who lives in the accommodation has an entry in each field.
 - Start dates are ISO dates. An end is an ISO date, or `"current"`. Both days count.
@@ -91,6 +96,14 @@ Open an accommodation to change its entries, which needs `accommodation-manage`:
   account as the admin with no password, then adds the entry through changeLink. An invitation goes
   only when the box is ticked and there is an email. A refused add comes back with what was typed,
   kept in the page and never in the URL.
+- __Every owner or share edit says what it is__ (operator, 2026-10-26): __correcting a mistake__ keeps
+  the ownership period (an owner added as a correction joins it), or __the ownership really changed__,
+  which goes to Ownership changed with what was typed filled in.
+- __Ownership changed__: the date and every owner from that date with their share, adding up to 100%;
+  someone new gets an account. `ResidencyManager.changeOwnership` checks everything first (a date
+  after the current owners began, the shares, each person once), then ends every current owner's
+  entry the day before and adds the new entries in a new ownership period, each through changeLink.
+  The old period's folio keeps its own balance.
 - __Edit__ an entry: as, from, through and share, then Save. Ending one is setting Through to the
   last day: "Lee Renter moved out 2026-09-30". A malformed entry is fixed the same way. Fields the
   page does not show (such as `acquiredFrom`) are kept. Changing As moves the entry between
@@ -227,8 +240,13 @@ The owners are then read under the system context, with a reason naming the call
 returns:
 
 ```json
-{ "billing": [{ "address": "…", "share": 100 }], "owners": [{ "@id": "urn:uuid:…", "share": 50 }] }
+{ "period": { "id": "8f0c…", "from": "2016-11-23" }, "billing": [{ "address": "…", "share": 100 }], "owners": [{ "@id": "urn:uuid:…", "share": 50 }] }
 ```
+
+It also gives `period: { id, from, through? }`, the ownership period billed on that date, which
+accounting maps to a folio; `ResidencyManager.ownershipPeriods(ctx, id)`, behind the same permission,
+lists every period of the unit, oldest first, with its owners by `@id` and their shares, for past
+folios.
 
 Owners come by identity `@id`, ordered by it, never by username; accounting reads names through
 IdentityManager. No names are copied in. It refuses, naming the accommodation, rather than bill

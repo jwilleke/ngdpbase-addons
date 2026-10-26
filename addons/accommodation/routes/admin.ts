@@ -5,6 +5,7 @@
  *   GET  /residents/:parcel          one accommodation: every owner and occupant entry, past and present
  *   POST /residents/:parcel/change   add a person (making their account when they have none), correct or remove one entry (#28)
  *   GET  /mine                       a signed-in resident's own units (#36), under accommodation-self
+ *   POST /residents/:parcel/ownership the ownership really changed: new owners and shares from a date, a new ownership period (#43)
  *   POST /residents/:parcel/billing the treasurer sets where the unit's invoices go (ngdpbase#2042)
  *   POST /mine/:parcel/billing       an owner sets where their unit's invoices go, as the treasurer can (ngdpbase#2042)
  *   POST /mine/:parcel/occupant-end  an owner ends an occupant's entry on their unit (#37)
@@ -75,6 +76,17 @@ function changeFrom(body: Record<string, unknown>, parcel: string): LinkChange |
     case 'remove': return { op, at };
     default: return `unknown change "${op}"`;
   }
+}
+
+/**
+ * A typed name as an account: a username, or the one account with that display name. Undefined for
+ * someone new; more than one account with the name is refused, asking for the username.
+ */
+function accountNamed(people: Array<{ username: string; name: string }>, person: string): string | undefined {
+  const named = people.filter(p => p.name.toLowerCase() === person.toLowerCase());
+  const username = people.find(p => p.username === person)?.username ?? (named.length === 1 ? named[0].username : undefined);
+  if (named.length > 1 && !username) throw new LinkChangeRefusedError(`more than one account is named ${person}; type the username the list shows beside the name`);
+  return username;
 }
 
 /**
@@ -191,17 +203,24 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
         await ctx.requirePermission('accommodation-manage');
         const change = changeFrom(body, parcel);
         if (typeof change === 'string') { res.redirect(`${back}?flash=refused&reason=${encodeURIComponent(change)}`); return; }
+        // Every edit of an owner or a share says what it is (operator, 2026-10-26, #43): a correction
+        // stays in the ownership period; a real change goes to "Ownership changed", already filled in.
+        const touchesOwner = (change.op === 'add' || change.op === 'correct') && (change.link.type === 'owner' || text(body, 'type') === 'owner');
+        if (touchesOwner && text(body, 'kind') !== 'correction') {
+          if (text(body, 'kind') !== 'change') throw new LinkChangeRefusedError('say whether this is correcting a mistake or the ownership really changed');
+          const date = change.op === 'add' || change.op === 'correct' ? change.link.from : '';
+          await renderUnit(req, res, ctx, parcel, { flash: 'use-ownership', reason: '', draft: {
+            ownership: 'open', on: date,
+            ...(change.op === 'add' ? { newPerson: text(body, 'person'), newShare: text(body, 'share') } : { changeUser: text(body, 'username'), changeShare: text(body, 'share') })
+          } });
+          return;
+        }
         // Add a person: the one Name box is an account picked from the list (its name, or its
         // username), else someone new, whose account is made in the same save.
         if (change.op === 'add') {
           const { residency } = managers();
           const person = text(body, 'person');
-          const people = await residency.people(ctx.getActor());
-          const named = people.filter(p => p.name.toLowerCase() === person.toLowerCase());
-          const username = people.find(p => p.username === person)?.username ?? (named.length === 1 ? named[0].username : undefined);
-          if (named.length > 1 && !username) {
-            throw new LinkChangeRefusedError(`more than one account is named ${person}; type the username the list shows beside the name`);
-          }
+          const username = accountNamed(await residency.people(ctx.getActor()), person);
           if (username) {
             res.redirect(afterChange(parcel, await residency.changeLink(ctx.getActor(), username, change)));
           } else {
@@ -221,7 +240,7 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           if ((err as Error).name === 'LinkChangeRefusedError') {
             if (text(body, 'op') === 'add') {
               // Shown again with what was typed: nothing to type twice, and nothing personal in the URL.
-              const draft = Object.fromEntries(['person', 'type', 'from', 'share', 'email', 'invite'].map(k => [k, text(body, k)]));
+              const draft = Object.fromEntries(['person', 'type', 'from', 'share', 'email', 'invite', 'kind'].map(k => [k, text(body, k)]));
               await renderUnit(req, res, ctx, parcel, { flash: 'refused', reason: (err as Error).message, draft });
               return;
             }
@@ -368,6 +387,51 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
           host.logger.error(`[accommodation] An owner's occupant end failed: ${answer instanceof Error ? answer.message : String(answer)}`);
           res.status(500).send('The occupant was not ended');
+        }
+      }
+    })();
+  });
+
+  // The ownership really changed (#43): from a date, the unit's owners are the rows given, in a new
+  // ownership period. A row is a current owner (by username) or a typed name, an account or someone
+  // new; a row with no share is left out. Refused with the reason, everything typed shown again.
+  router.post('/residents/:parcel/ownership', (req: Request, res: Response) => {
+    void (async () => {
+      const ctx = ApiContext.from(req, engine as never);
+      const parcel = String(req.params['parcel']);
+      const back = `/addons/accommodation/residents/${encodeURIComponent(parcel)}`;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const list = (v: unknown): string[] => (Array.isArray(v) ? v : v === undefined ? [] : [v]).map(x => (typeof x === 'string' ? x.trim() : ''));
+      try {
+        await ctx.requirePermission('accommodation-manage');
+        const { residency } = managers();
+        const people = await residency.people(ctx.getActor());
+        const names = list(body['owner']); const shares = list(body['ownerShare']); const emails = list(body['ownerEmail']);
+        const owners = names.flatMap((name, i) => {
+          if (!name || !shares[i]) return [];
+          const username = accountNamed(people, name);
+          return [username ? { username, share: Number(shares[i]) } : { name, email: emails[i] ?? '', share: Number(shares[i]) }];
+        });
+        await residency.changeOwnership(ctx.getActor(), parcel, text(body, 'on'), owners);
+        res.redirect(`${back}?flash=ownership-changed`);
+      } catch (err) {
+        try {
+          if ((err as Error).name === 'AccommodationRefusedError') {
+            const refused = err as { permission: string; decision: never };
+            await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
+          }
+          if ((err as Error).name === 'LinkChangeRefusedError') {
+            await renderUnit(req, res, ctx, parcel, { flash: 'refused', reason: (err as Error).message, draft: {
+              ownership: 'open', on: text(body, 'on'),
+              rows: JSON.stringify(list(body['owner']).map((owner, i) => ({ owner, share: list(body['ownerShare'])[i] ?? '', email: list(body['ownerEmail'])[i] ?? '' })))
+            } });
+            return;
+          }
+          throw err;
+        } catch (answer) {
+          if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
+          host.logger.error(`[accommodation] A change of ownership of ${parcel} failed: ${answer instanceof Error ? answer.message : String(answer)}`);
+          res.status(500).send('The change of ownership was not saved');
         }
       }
     })();

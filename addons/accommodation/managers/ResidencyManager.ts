@@ -22,10 +22,11 @@
  * place roles change (#23): it is retried, recorded and reported by the job manager, and it
  * keeps the add-on to its one call of the context-free RoleManager.hasRole (ngdpbase#2018).
  */
+import { randomUUID } from 'node:crypto';
 import type { ActorContext, AddonHost } from '@jwilleke/ngdpbase-types';
 import type { Accommodation } from '../providers/AccommodationProvider.js';
 import { AccommodationRefusedError, type AccommodationAuditRecord, type Decide } from './AccommodationManager.js';
-import { fieldOf, holdsOn, isIsoDate, localToday, readEntries, readLinks, shareProblems, storedEntry, type LinkType, type UnitLink } from './unitLinks.js';
+import { fieldOf, holdsOn, isIsoDate, localToday, periodProblems, previousDay, readEntries, readLinks, shareProblems, storedEntry, type LinkType, type UnitLink } from './unitLinks.js';
 import { contactDetailsFrom, occupantAnswersFrom, OCCUPANT_EDITABLE_FIELDS, OCCUPANT_EDITABLE_TYPES } from './contactDetails.js';
 import { billingForForm, convertLegacyBilling, isLegacyBilling, readBilling, type BillingEntry, type BillingForm } from './billing.js';
 import { suggestedBilling } from './countyRecord.js';
@@ -36,8 +37,14 @@ export interface UnitMember { username: string; name: string; email: string | nu
 /** An owner as billing() gives it: their identity @id, never a username, and their share of the unit. */
 export interface BillingOwner { '@id': string; share: number }
 
-/** What billing() gives (ngdpbase#2042): where the invoices go, and who owes them. */
-export interface Billing { billing: BillingEntry[]; owners: BillingOwner[] }
+/** An ownership period as accounting reads it (#43): one stretch of the same owners and shares, one folio. */
+export interface OwnershipPeriod { id: string; from: string; through?: string }
+
+/** What billing() gives (ngdpbase#2042): the ownership period billed, where the invoices go, and who owes them. */
+export interface Billing { period: OwnershipPeriod; billing: BillingEntry[]; owners: BillingOwner[] }
+
+/** A unit's ownership period with its owners, for accounting's past folios (#43). */
+export interface OwnershipPeriodOwners extends OwnershipPeriod { owners: BillingOwner[] }
 
 /** One link of a unit's history, with the person it names. */
 export interface UnitHistoryEntry extends UnitMember { type: LinkType; from: string; to: string }
@@ -194,6 +201,33 @@ function usernameFrom(name: string): string {
   return name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).join('.');
 }
 
+/** An ownership period's id and dates (#43): from its earliest start; `through` only once every entry has ended. */
+function periodOf(id: string, links: UnitLink[]): OwnershipPeriod {
+  const from = links.map(l => l.from).sort()[0] ?? '';
+  const ended = links.length > 0 && links.every(l => l.to !== 'current');
+  return { id, from, ...(ended ? { through: links.map(l => l.to).sort().pop() as string } : {}) };
+}
+
+/**
+ * A new person's name, email and username, checked before anything is made: a name, a well-formed
+ * email if one is given and on no other account, and a username (given, else made from the name)
+ * free to use.
+ */
+function checkNewPerson(users: UserRecord[], person: { name: string; email?: string; username?: string }): { name: string; email: string; username: string } {
+  const name = person.name.trim();
+  if (!name) throw new LinkChangeRefusedError('a new person needs a name');
+  const email = (person.email ?? '').trim();
+  if (email && !/^[^\s@]+@[^\s@]+$/.test(email)) throw new LinkChangeRefusedError(`${email} is not an email address`);
+  const holder = email ? users.find(u => (u.email ?? '').trim().toLowerCase() === email.toLowerCase()) : undefined;
+  if (holder) throw new LinkChangeRefusedError(`${holder.username} already has the email ${email}; choose them under Person instead`);
+  const username = (person.username ?? '').trim() || usernameFrom(name);
+  if (!/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(username)) throw new LinkChangeRefusedError(`give a username for ${name} (letters, digits, . _ -)`);
+  if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+    throw new LinkChangeRefusedError(`the username ${username} is taken; choose that person under Person, or give another username`);
+  }
+  return { name, email, username };
+}
+
 /** The names of the fields `entry` gives a different value from `raw`, sorted. */
 function changedKeys(raw: unknown, entry: Record<string, unknown>): string[] {
   const before = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -277,6 +311,9 @@ export default class ResidencyManager {
     if (held.length === 0) throw new Error(`unit ${id}: no current owner to bill`);
     const total = held.reduce((t, { link }) => t + (link.share ?? 0), 0);
     if (Math.abs(total - 100) > 1e-9) throw new Error(`unit ${id}: owner shares add up to ${total}%, not 100%`);
+    const ids = new Set(held.map(({ link }) => link.period ?? ''));
+    if (ids.size !== 1 || ids.has('')) throw new Error(`unit ${id}: the owners on ${date} are not in one ownership period`);
+    const periodId = [...ids][0];
     const billing = this.billingEntries(id);
     const owners = new Map<string, number>();
     for (const { user, link } of held) {
@@ -284,7 +321,35 @@ export default class ResidencyManager {
       if (!identity) throw new Error(`unit ${id}: an owner has no identity record`);
       owners.set(identity.id, (owners.get(identity.id) ?? 0) + (link.share ?? 0));
     }
-    return { billing, owners: [...owners].sort(([a], [b]) => a.localeCompare(b)).map(([at, share]) => ({ '@id': at, share })) };
+    const period = periodOf(periodId, (await this.linksTo(ctx, id)).filter(({ link }) => link.type === 'owner' && link.period === periodId).map(({ link }) => link));
+    return { period, billing, owners: [...owners].sort(([a], [b]) => a.localeCompare(b)).map(([at, share]) => ({ '@id': at, share })) };
+  }
+
+  /**
+   * Every ownership period of the unit (#43), oldest first, with its owners by identity @id and
+   * their shares: accounting's folios, a past owner's included. The same door as billing():
+   * `accommodation-billing-read`, decided with the caller, then read under the system context.
+   */
+  async ownershipPeriods(ctx: ActorContext, id: string): Promise<OwnershipPeriodOwners[]> {
+    if (!this.decide || !this.systemContext || !this.identities) throw new Error('ResidencyManager was started without its decision point');
+    const decision = await this.decide(ctx, { action: 'accommodation-billing-read' });
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-billing-read', decision);
+    const system = this.systemContext(`accommodation: ownership periods of unit ${id}, for ${ctx.username ?? 'unknown'}`);
+    const byPeriod = new Map<string, Array<{ user: UserRecord; link: UnitLink }>>();
+    for (const held of (await this.linksTo(system, id)).filter(({ link }) => link.type === 'owner' && link.period)) {
+      byPeriod.set(held.link.period as string, [...(byPeriod.get(held.link.period as string) ?? []), held]);
+    }
+    const periods: OwnershipPeriodOwners[] = [];
+    for (const [periodId, entries] of byPeriod) {
+      const owners: BillingOwner[] = [];
+      for (const { user, link } of entries) {
+        const identity = await this.identities.find(system, user.username);
+        if (!identity) throw new Error(`unit ${id}: an owner has no identity record`);
+        owners.push({ '@id': identity.id, share: link.share ?? 0 });
+      }
+      periods.push({ ...periodOf(periodId, entries.map(e => e.link)), owners: owners.sort((a, b) => a['@id'].localeCompare(b['@id'])) });
+    }
+    return periods.sort((a, b) => a.from.localeCompare(b.from) || a.id.localeCompare(b.id));
   }
 
   /**
@@ -636,23 +701,12 @@ export default class ResidencyManager {
       const decision = await changes.decide(ctx, { action });
       if (!decision.permit) throw new AccommodationRefusedError(action, decision);
     }
-    const name = person.name.trim();
-    if (!name) throw new LinkChangeRefusedError('a new person needs a name');
     const problem = this.checkEntry(link);
     if (problem) throw new LinkChangeRefusedError(problem);
     if (link.type === 'owner' && !(typeof link.share === 'number' && link.share > 0 && link.share <= 100)) {
       throw new LinkChangeRefusedError('an owner needs a share, a percent above 0 and at most 100');
     }
-    const email = (person.email ?? '').trim();
-    if (email && !/^[^\s@]+@[^\s@]+$/.test(email)) throw new LinkChangeRefusedError(`${email} is not an email address`);
-    const users = await this.users(ctx);
-    const holder = email ? users.find(u => (u.email ?? '').trim().toLowerCase() === email.toLowerCase()) : undefined;
-    if (holder) throw new LinkChangeRefusedError(`${holder.username} already has the email ${email}; choose them under Person instead`);
-    const username = (person.username ?? '').trim() || usernameFrom(name);
-    if (!/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(username)) throw new LinkChangeRefusedError(`give a username for ${name} (letters, digits, . _ -)`);
-    if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
-      throw new LinkChangeRefusedError(`the username ${username} is taken; choose that person under Person, or give another username`);
-    }
+    const { name, email, username } = checkNewPerson(await this.users(ctx), person);
 
     await changes.createUser(ctx, { username, ...(email ? { email } : {}), displayName: name });
     const invitation = person.invite && email ? await changes.inviteUser(ctx, username) : undefined;
@@ -662,6 +716,116 @@ export default class ResidencyManager {
       throw new LinkChangeRefusedError(`the account ${username} was made, but the entry was not added (${err instanceof Error ? err.message : String(err)}); choose ${username} under Person to add it`);
     }
     return { username, ...(invitation ? { invitation } : {}) };
+  }
+
+  /**
+   * The ownership really changed (#43; operator, 2026-10-26): a sale, an owner added or removed, a
+   * transfer on death, or new shares. From `on`, the unit's owners are exactly `owners`, in a new
+   * ownership period, so accounting bills them on a new folio. Needs `accommodation-manage`, and
+   * `user-create` when someone new is named (made with no password; invited only when asked and
+   * they have an email). Everything is checked before anything is written: a date after the current
+   * period began, shares that add up to 100, each person once. Then any new accounts are made, every
+   * current owner's entry ends the day before `on`, and the new entries are added, each through
+   * changeLink, recorded there. Saved account by account: if one fails, the page's share check
+   * shows what is left to do.
+   */
+  async changeOwnership(ctx: ActorContext, id: string, on: string,
+    owners: Array<{ username?: string; name?: string; email?: string; invite?: boolean; share: number }>): Promise<{ period: string; made: string[] }> {
+    const changes = this.changes;
+    if (!changes) throw new Error('ResidencyManager was started without its write side');
+    const decision = await changes.decide(ctx, { action: 'accommodation-manage' });
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-manage', decision);
+    if (!this.accommodation(id)) throw new LinkChangeRefusedError(`no accommodation ${id}`);
+    if (!isIsoDate(on)) throw new LinkChangeRefusedError(`the date the ownership changed must be a date YYYY-MM-DD, not ${on || 'empty'}`);
+    if (owners.length === 0) throw new LinkChangeRefusedError('name at least one owner from that date');
+    for (const o of owners) {
+      if (!(typeof o.share === 'number' && o.share > 0 && o.share <= 100)) throw new LinkChangeRefusedError('each owner needs a share, a percent above 0 and at most 100');
+    }
+    const total = owners.reduce((t, o) => t + o.share, 0);
+    if (Math.abs(total - 100) > 1e-9) throw new LinkChangeRefusedError(`the new owners' shares add up to ${total}%, not 100%`);
+
+    const users = await this.users(ctx);
+    const current = (await this.unitEntries(ctx, id)).entries.filter(e => e.type === 'owner' && e.link && e.link.to === 'current');
+    const started = current.map(e => e.link!.from).sort().pop();
+    if (started && on <= started) throw new LinkChangeRefusedError(`the current owners started on ${started}; a change of ownership must come after that (or is it correcting a mistake?)`);
+    const fresh = owners.filter(o => !o.username).map(o => ({ share: o.share, invite: o.invite, ...checkNewPerson(users, { name: o.name ?? '', email: o.email }) }));
+    const named = owners.filter(o => o.username).map(o => o.username as string);
+    for (const u of named) if (!users.some(x => x.username === u)) throw new LinkChangeRefusedError(`no account named ${u}`);
+    const all = [...named, ...fresh.map(f => f.username)];
+    if (new Set(all).size !== all.length) throw new LinkChangeRefusedError('each owner can be named only once');
+    if (fresh.length > 0) {
+      if (!changes.createUser || !changes.inviteUser) throw new Error('ResidencyManager was started without its account door');
+      const decision = await changes.decide(ctx, { action: 'user-create' });
+      if (!decision.permit) throw new AccommodationRefusedError('user-create', decision);
+    }
+
+    const period = randomUUID();
+    for (const f of fresh) {
+      await changes.createUser!(ctx, { username: f.username, ...(f.email ? { email: f.email } : {}), displayName: f.name });
+      if (f.invite && f.email) await changes.inviteUser!(ctx, f.username);
+    }
+    for (const e of current) {
+      await this.changeLink(ctx, e.username, { op: 'end', at: { type: 'owner', index: e.index, expected: e.expected }, on: previousDay(on) });
+    }
+    const shareOf = new Map([...owners.filter(o => o.username).map(o => [o.username as string, o.share] as const), ...fresh.map(f => [f.username, f.share] as const)]);
+    for (const username of all) {
+      await this.changeLink(ctx, username, { op: 'add', link: { parcel: id, type: 'owner', from: on, to: 'current', share: shareOf.get(username), period } });
+    }
+    return { period, made: fresh.map(f => f.username) };
+  }
+
+  /** The ownership period an owner added on `date` joins: the one the unit's owners hold then, else a new one. */
+  private async periodOn(ctx: ActorContext, id: string, date: string): Promise<string> {
+    const held = (await this.linksTo(ctx, id)).filter(({ link }) => link.type === 'owner' && (holdsOn(link, date) || (link.to === 'current' && link.from > date)));
+    const ids = new Set(held.map(({ link }) => link.period).filter((p): p is string => !!p));
+    if (ids.size > 1) throw new LinkChangeRefusedError(`unit ${id} has more than one ownership period around ${date}; record it as a change of ownership instead`);
+    return [...ids][0] ?? randomUUID();
+  }
+
+  /**
+   * Gives every ownership entry with no period one, once at start-up (#43; operator, 2026-10-26:
+   * each unit starts with one period, its current owners), under the system context: per unit,
+   * its current owners share one new period, and entries that have ended share one per stretch of
+   * the same dates. Written through UserManager's function form, one account at a time, recorded as
+   * `accommodation-manage` (`owner-period-set`), naming the field, never its values.
+   */
+  async tagPeriods(systemCtx: ActorContext): Promise<{ tagged: number; accounts: number }> {
+    const changes = this.changes;
+    if (!changes) throw new Error('ResidencyManager was started without its write side');
+    const users = await this.users(systemCtx);
+    const untagged = users.flatMap(u => readEntries(u).entries
+      .filter(e => e.type === 'owner' && e.link && !e.link.period)
+      .map(e => ({ username: u.username, index: e.index, link: e.link as UnitLink })));
+    if (untagged.length === 0) return { tagged: 0, accounts: 0 };
+    const idFor = new Map<string, string>();
+    const keyOf = (l: UnitLink): string => (l.to === 'current' ? `${l.parcel}|current` : `${l.parcel}|${l.from}|${l.to}`);
+    // A unit already in periods keeps its current one: an untagged current owner joins it.
+    for (const u of users) for (const l of readLinks(u).links) if (l.type === 'owner' && l.period && l.to === 'current') idFor.set(keyOf(l), l.period);
+    for (const e of untagged) if (!idFor.has(keyOf(e.link))) idFor.set(keyOf(e.link), randomUUID());
+    const { metadata: whoMetadata, ...who } = changes.host.actorOf(systemCtx);
+    let accounts = 0;
+    for (const username of [...new Set(untagged.map(e => e.username))].sort()) {
+      const mine = untagged.filter(e => e.username === username);
+      await changes.updateUser(username, async (current) => {
+        const list = Array.isArray(current.ownership) ? [...current.ownership] : [];
+        let changed = false;
+        for (const e of mine) {
+          const raw = list[e.index] as Record<string, unknown> | undefined;
+          if (!raw || raw.period !== undefined || raw.typeOfGood !== e.link.parcel) continue;
+          list[e.index] = { ...raw, period: idFor.get(keyOf(e.link)) };
+          changed = true;
+        }
+        if (!changed) return undefined;
+        await changes.recordAudit({
+          eventType: changes.host.addonAuditEventName('accommodation-manage'), ...who, result: 'success',
+          action: 'owner-period-set', severity: 'low', resource: [...new Set(mine.map(e => e.link.parcel))].join(','), resourceType: 'accommodation',
+          metadata: { ...whoMetadata, username, owner: username, field: 'ownership', fields: ['period'] }
+        });
+        return { ownership: list };
+      }, systemCtx);
+      accounts++;
+    }
+    return { tagged: untagged.length, accounts };
   }
 
   /** Every account, by username, as the add-on's pages offer them: display name and email. */
@@ -738,6 +902,11 @@ export default class ResidencyManager {
     if (!decision.permit && !byOwner) throw new AccommodationRefusedError('accommodation-manage', decision);
 
     if (!(await this.users(ctx)).some(u => u.username === username)) throw new LinkChangeRefusedError(`no account named ${username}`);
+    // An owner added as a correction joins the unit's ownership period on its start date (#43);
+    // a correction of an entry keeps the period the entry has.
+    if ((change.op === 'add' || (change.op === 'correct' && change.at.type === 'occupant')) && change.link.type === 'owner' && !change.link.period) {
+      change = { ...change, link: { ...change.link, period: await this.periodOn(ctx, change.link.parcel, change.link.from) } };
+    }
     const type = change.op === 'add' || change.op === 'correct' ? change.link.type : change.at.type;
     const field = fieldOf(type);
     // A correction that changes the type moves the entry to the other list, in the same write.
@@ -864,7 +1033,8 @@ export default class ResidencyManager {
     const read = (await this.users(ctx)).map(u => ({ username: u.username, ...readLinks(u) }));
     return [
       ...read.flatMap(r => r.problems),
-      ...shareProblems(read.flatMap(r => r.links.map(link => ({ username: r.username, link }))))
+      ...shareProblems(read.flatMap(r => r.links.map(link => ({ username: r.username, link })))),
+      ...periodProblems(read.flatMap(r => r.links.map(link => ({ username: r.username, link }))))
     ];
   }
 }

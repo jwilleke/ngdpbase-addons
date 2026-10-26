@@ -15,6 +15,11 @@
  * and tenant later), `accommodation` the parcel (operator, 2026-10-23). An end is an ISO date
  * or the word "current", never null (operator, 2026-10-22). An entry that is not exactly this
  * shape is reported, never guessed.
+ *
+ * An ownership entry also names its ownership period, `period` (operator, 2026-10-26, #43): one
+ * stretch of the same owners with the same shares, which accounting bills as one folio. A unit's
+ * period is the entries that share the id. A correction keeps it; a real change of owners or shares
+ * ends the entries and adds new ones under a new id.
  */
 
 export type LinkType = 'owner' | 'occupant';
@@ -29,6 +34,8 @@ export interface UnitLink {
   to: string;
   /** An owner's percent of the unit; absent for an occupant. */
   share?: number;
+  /** An owner's ownership period id (#43); absent on an occupant, and on an entry not yet given one. */
+  period?: string;
 }
 
 /** The fields this module reads from a user record. */
@@ -68,9 +75,16 @@ export function localToday(now: Date = new Date()): string {
 }
 
 /** The day after an ISO date. */
-function nextDay(date: string): string {
+export function nextDay(date: string): string {
   const d = new Date(`${date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The day before an ISO date. */
+export function previousDay(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 }
 
@@ -108,7 +122,9 @@ function readEntry(raw: unknown, shape: FieldShape, where: string): { link: Unit
   if (typeof share !== 'number' || !Number.isFinite(share) || share <= 0 || share > 100) {
     return { problem: `${where}.share must be a percent above 0 and at most 100` };
   }
-  return { link: { parcel, type: 'owner', from, to, share } };
+  const period = r.period;
+  if (period !== undefined && (typeof period !== 'string' || period === '')) return { problem: `${where}.period must name an ownership period` };
+  return { link: { parcel, type: 'owner', from, to, share, ...(period ? { period } : {}) } };
 }
 
 /** One field's entries, each read on its own; a field that is not a list is one problem for the whole field. */
@@ -160,7 +176,7 @@ export function readLinks(user: LinkFields): { links: UnitLink[]; problems: stri
 export function storedEntry(link: UnitLink): { entry: Record<string, unknown> } | { problem: string } {
   const shape = SHAPES[link.type];
   const entry: Record<string, unknown> = link.type === 'owner'
-    ? { [shape.parcel]: link.parcel, [shape.from]: link.from, [shape.to]: link.to, share: link.share }
+    ? { [shape.parcel]: link.parcel, [shape.from]: link.from, [shape.to]: link.to, share: link.share, ...(link.period ? { period: link.period } : {}) }
     : { roleName: 'occupant', [shape.parcel]: link.parcel, [shape.from]: link.from, [shape.to]: link.to };
   const read = readEntry(entry, shape, shape.field);
   return 'problem' in read ? { problem: read.problem } : { entry };
@@ -196,6 +212,36 @@ export function shareProblems(owners: Array<{ username: string; link: UnitLink }
         const who = holding.map(e => `${e.username} ${e.link.share}%`).sort().join(', ');
         problems.push(`unit ${parcel}: owners' shares on ${date} add up to ${total}%, not 100% (${who})`);
       }
+    }
+  }
+  return problems;
+}
+
+/**
+ * Every date on which a unit's owners are not in one ownership period (#43): owners holding on the
+ * same day under different period ids, or with none. One problem per date the owners change, as
+ * shareProblems does. A unit with no owner that day has none.
+ */
+export function periodProblems(owners: Array<{ username: string; link: UnitLink }>): string[] {
+  const byParcel = new Map<string, Array<{ username: string; link: UnitLink }>>();
+  for (const o of owners) {
+    if (o.link.type !== 'owner') continue;
+    byParcel.set(o.link.parcel, [...(byParcel.get(o.link.parcel) ?? []), o]);
+  }
+  const problems: string[] = [];
+  for (const [parcel, entries] of [...byParcel].sort(([a], [b]) => a.localeCompare(b))) {
+    const changes = new Set<string>();
+    for (const { link } of entries) {
+      changes.add(link.from);
+      if (link.to !== 'current') changes.add(nextDay(link.to));
+    }
+    for (const date of [...changes].sort()) {
+      const holding = entries.filter(e => holdsOn(e.link, date));
+      const ids = new Set(holding.map(e => e.link.period ?? ''));
+      if (holding.length === 0 || (ids.size === 1 && !ids.has(''))) continue;
+      problems.push(ids.has('')
+        ? `unit ${parcel}: on ${date} ${holding.filter(e => !e.link.period).map(e => e.username).sort().join(', ')} ${holding.filter(e => !e.link.period).length === 1 ? 'is' : 'are'} in no ownership period`
+        : `unit ${parcel}: owners on ${date} are in ${ids.size} ownership periods, not one`);
     }
   }
   return problems;

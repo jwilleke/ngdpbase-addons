@@ -73,9 +73,9 @@ describe('ResidencyManager', () => {
 
   test("owners' shares that do not add up to 100 are reported, on each date the owners change", async () => {
     const users = [
-      { username: 'a', ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: 'current', share: 60 }] },
-      { username: 'b', ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: '2021-12-31', share: 40 }] },
-      { username: 'c', ownership: [{ typeOfGood: 'p1', ownedFrom: '2022-01-01', ownedThrough: 'current', share: 30 }] }
+      { username: 'a', ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: 'current', share: 60, period: 'x' }] },
+      { username: 'b', ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: '2021-12-31', share: 40, period: 'x' }] },
+      { username: 'c', ownership: [{ typeOfGood: 'p1', ownedFrom: '2022-01-01', ownedThrough: 'current', share: 30, period: 'x' }] }
     ];
     const m = new ResidencyManager({ users: async () => users, accommodation: () => undefined, today: () => TEST_TODAY });
     expect(await m.linkProblems(ctx)).toEqual(["unit p1: owners' shares on 2022-01-01 add up to 90%, not 100% (a 60%, c 30%)"]);
@@ -93,6 +93,7 @@ describe('ResidencyManager', () => {
   test('billing: where the invoices go, as kept on the unit, and who owes, each owner by @id with their share', async () => {
     const m = open();
     expect(await m.billing(ctx, '66-00001.000')).toEqual({
+      period: { id: 'p1-now', from: '2015-06-01' },
       billing: [
         { address: 'PAT EXAMPLE\n101 Sample Dr\nMount Vernon OH 43050', share: 60 },
         { address: 'SAM EXAMPLE\n9 Elsewhere Ln\nColumbus OH 43215', share: 40 }
@@ -134,7 +135,7 @@ describe('ResidencyManager', () => {
   });
 
   test("billing refuses when the owners' shares do not add up to 100, or an owner has no identity record", async () => {
-    const one = (share: number, username = 'a') => ({ username, ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: 'current', share }] });
+    const one = (share: number, username = 'a') => ({ username, ownership: [{ typeOfGood: 'p1', ownedFrom: '2020-01-01', ownedThrough: 'current', share, period: 'q' }] });
     const make = (users: unknown[]) => new ResidencyManager({
       users: async () => users as never, accommodation: () => ({ id: 'p1', billing: [{ address: '1 Main St' }] }), today: () => TEST_TODAY,
       decide: async () => ({ permit: true, applicable: true, reason: 'test' }),
