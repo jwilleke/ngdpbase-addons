@@ -249,6 +249,10 @@ for legal purposes", held by the board in Google Docs. What bears on the softwar
   get a copy two days before they take effect, Bylaws Art. IX); the owner's 30-day duty to report
   owner, occupant and agent details (Declaration §3.H), already the Occupancy information form.
 
+## Billing, folios and maintenance
+
+See [condos-planning.md](../condos-planning.md) (operator, 2026-10-26).
+
 ## Ideas, not yet issues
 
 - __Roster report__ for the board: every unit with its current owners, their addresses and the unit's
