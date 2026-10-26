@@ -36,7 +36,7 @@ function open(start: UserRecord[] = SAMPLE_USERS) {
     today: () => TEST_TODAY,
     decide,
     systemContext: (reason) => { systemReasons.push(reason); return ({ username: 'system', reason }) as unknown as ActorContext; },
-    identities: { find: async (_c, username) => ({ id: `urn:uuid:${username}` }), update: async () => undefined },
+    identities: { find: async (_c, username) => ({ id: `urn:uuid:${username}` }), update: async () => undefined, idOf: async (_c, username) => `urn:uuid:${username}` },
     reviews: { fileRequest: async (c, input) => { filed.push({ by: (c as { username?: string }).username, ...input }); return { id: `r${filed.length}` }; } },
     changes: {
       host, decide,
@@ -135,6 +135,7 @@ describe('ownership periods (#43)', () => {
     expect(t.ownership('old.owner')?.[0].period).not.toBe(pat);
     expect(t.ownership('kim.both')?.[0].period).toBe(t.ownership('sam.example')?.[1].period);
     expect(t.audits.map(a => a.action)).toEqual(['owner-period-set', 'owner-period-set', 'owner-period-set', 'owner-period-set']);
+    expect(t.audits.every(a => a.metadata['owner'] === `urn:uuid:${a.metadata['ownerUser']}`)).toBe(true);
     expect(JSON.stringify(t.audits)).not.toContain(String(pat)); // names, never values
     expect(await t.m.tagPeriods(as('system'))).toEqual({ tagged: 0, accounts: 0 });
   });

@@ -188,6 +188,7 @@ describe('ResidencyManager.updateOccupantDetails (#37)', () => {
       systemContext: (reason) => ({ username: 'system', roles: [], isAuthenticated: true, reason }) as unknown as ActorContext,
       identities: {
         find: async (_sys, username) => records[username] ?? null,
+        idOf: async (_sys, username) => (username === 'friend' ? 'urn:uuid:friend' : records[username]?.id ?? null),
         update: async (sys, id, patch) => { order.push('write'); patches.push([sys, id, patch]); }
       },
       changes: {
@@ -214,7 +215,7 @@ describe('ResidencyManager.updateOccupantDetails (#37)', () => {
       { homePhone: '555-0100', otherPhone: '', businessPhone: '555-0200', emergencyName: 'Kim', emergencyPhone: '555-0199' });
     expect(t.order).toEqual(['audit:success', 'write', 'notice']);
     expect(t.audits[0]).toMatchObject({ user: 'pat.example', action: 'occupant-details-set', resource: '66-00001.000',
-      metadata: { occupant: 'lee.renter', fields: ['homePhone', 'businessPhone', 'emergencyName', 'emergencyPhone'] } });
+      metadata: { occupant: 'lee.renter', ownerUser: 'lee.renter', owner: 'urn:uuid:lee', fields: ['homePhone', 'businessPhone', 'emergencyName', 'emergencyPhone'] } });
     expect(JSON.stringify(t.audits[0])).not.toMatch(/555-01|Kim/);
     const [sys, id, patch] = t.patches[0] as [{ reason: string }, string, { contactPoint: unknown[] }];
     expect(id).toBe('urn:uuid:lee');
@@ -270,6 +271,7 @@ describe('ResidencyManager.addOccupant (#37)', () => {
       today: () => TEST_TODAY,
       decide,
       systemContext: (reason) => ({ username: 'system', roles: [], isAuthenticated: true, reason }) as unknown as ActorContext,
+      identities: { find: async () => null, update: async () => undefined, idOf: async (_c, username) => (username === 'friend' ? 'urn:uuid:friend' : null) },
       changes: {
         host, decide,
         recordAudit: async (r) => { order.push(`audit:${r.action}:${r.result ?? 'success'}`); audits.push(r as never); },
@@ -299,7 +301,7 @@ describe('ResidencyManager.addOccupant (#37)', () => {
     expect(t.order).toEqual(['audit:occupant-add:success', 'audit:occupant-add:success', 'write', 'notice']);
     expect(t.audits.map(r => r.eventType)).toEqual(['accommodation-occupant-add', 'accommodation-manage']);
     expect(t.occupiesOf('friend')).toEqual([{ roleName: 'occupant', accommodation: '66-00001.000', startDate: '2026-10-20', endDate: 'current' }]);
-    expect(t.audits[0]).toMatchObject({ user: 'pat.example', resource: '66-00001.000', metadata: { occupant: 'friend', newAccount: false } });
+    expect(t.audits[0]).toMatchObject({ user: 'pat.example', resource: '66-00001.000', metadata: { occupant: 'friend', owner: 'urn:uuid:friend', ownerUser: 'friend', newAccount: false } });
     expect(t.notices).toEqual(['An owner of unit 66-00001.000 added an occupant.']);
   });
 

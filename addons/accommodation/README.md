@@ -337,6 +337,10 @@ names the key.
 What each accommodation permission and role means, and where it is checked and recorded:
 [docs/permissions.md](docs/permissions.md).
 
+## Who a record refers to
+
+From ngdpbase 5.34.0 ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041), step 7 of the identity model, [#2042](https://github.com/jwilleke/ngdpbase/issues/2042)) the add-on needs 5.34.0 or later, and an audit row that touches an owner's or occupant's entry writes `metadata.owner` as their identity `@id` and `metadata.ownerUser` as their username (`IdentityManager.identityIdOf`, under the system context). A name with no account, or an identity store that cannot answer, leaves the username in `owner`, and the change still completes. Rows written before this keep the username in `owner`. The `username` key those rows also carried is now `ownerUser`; `occupant` stays on the occupant rows. Ownership and occupies entries stay on the account, by design, so there is nothing stored here to convert; billing addresses are free text and name no user.
+
 ## Develop
 
 ```bash

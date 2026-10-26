@@ -165,6 +165,11 @@ export interface IdentityDoor {
   /** The user's own identity record: its id and contactPoint entries; null when there is none. */
   find: (systemCtx: ActorContext, username: string) => Promise<{ id: string; contactPoint?: unknown[] } | null>;
   update: (systemCtx: ActorContext, id: string, patch: Record<string, unknown>) => Promise<unknown>;
+  /**
+   * IdentityManager.identityIdOf (ngdpbase 5.34.0, #2041): the user's identity @id, or null when
+   * there is no account or the identity store cannot answer. Absent, audit rows carry the name.
+   */
+  idOf?: (ctx: ActorContext, username: string) => Promise<string | null>;
 }
 
 /** core's review door (host.reviews, ngdpbase#2072): files an owner's request for the Board to decide. */
@@ -276,6 +281,22 @@ export default class ResidencyManager {
       }
     }
     return found;
+  }
+
+  /**
+   * The owner of an audited change, by identity @id with the username beside it (#2042):
+   * `metadata.owner` and `metadata.ownerUser`. The lookup runs under the system context when
+   * there is one; no account, no door, or a store that cannot answer leaves the name in `owner`,
+   * and never fails the change.
+   */
+  private async ownerMetadata(ctx: ActorContext, username: string): Promise<{ owner: string; ownerUser: string }> {
+    let id: string | null = null;
+    try {
+      id = (await this.identities?.idOf?.(this.systemContext?.('accommodation: identity @id of an audited owner (#2042)') ?? ctx, username)) ?? null;
+    } catch {
+      id = null;
+    }
+    return { owner: id ?? username, ownerUser: username };
   }
 
   /** The people with a link of that type holding on the date, ordered by username. */
@@ -623,7 +644,7 @@ export default class ResidencyManager {
       ...who, result,
       action: 'occupant-details-set', severity: 'medium', resource: id, resourceType: 'accommodation',
       // names, never values
-      metadata: { ...whoMetadata, occupant, owner: occupant, fields: [...answered], ...(reason ? { reason } : {}) }
+      metadata: { ...whoMetadata, occupant, owner: person.id, ownerUser: occupant, fields: [...answered], ...(reason ? { reason } : {}) }
     });
     await changes.recordAudit(record('success'));
     try {
@@ -669,12 +690,13 @@ export default class ResidencyManager {
       throw new LinkChangeRefusedError(`no account has the email ${email}; give a username for a new one (letters, digits, . _ -)`);
     }
 
+    const ownerOf = await this.ownerMetadata(ctx, username);
     const { metadata: whoMetadata, ...who } = changes.host.actorOf(ctx);
     const record = (result: 'success' | 'failure', reason?: string): AccommodationAuditRecord => ({
       eventType: changes.host.addonAuditEventName('accommodation-occupant-add'),
       ...who, result,
       action: 'occupant-add', severity: 'medium', resource: id, resourceType: 'accommodation',
-      metadata: { ...whoMetadata, occupant: username, owner: username, newAccount: matches.length === 0, ...(reason ? { reason } : {}) }
+      metadata: { ...whoMetadata, occupant: username, ...ownerOf, newAccount: matches.length === 0, ...(reason ? { reason } : {}) }
     });
     await changes.recordAudit(record('success'));
     const failed = async (reason: string, err: unknown): Promise<never> => {
@@ -912,6 +934,7 @@ export default class ResidencyManager {
     let accounts = 0;
     for (const username of [...new Set(untagged.map(e => e.username))].sort()) {
       const mine = untagged.filter(e => e.username === username);
+      const ownerOf = await this.ownerMetadata(systemCtx, username);
       await changes.updateUser(username, async (current) => {
         const list = Array.isArray(current.ownership) ? [...current.ownership] : [];
         let changed = false;
@@ -925,7 +948,7 @@ export default class ResidencyManager {
         await changes.recordAudit({
           eventType: changes.host.addonAuditEventName('accommodation-manage'), ...who, result: 'success',
           action: 'owner-period-set', severity: 'low', resource: [...new Set(mine.map(e => e.link.parcel))].join(','), resourceType: 'accommodation',
-          metadata: { ...whoMetadata, username, owner: username, field: 'ownership', fields: ['period'] }
+          metadata: { ...whoMetadata, ...ownerOf, field: 'ownership', fields: ['period'] }
         });
         return { ownership: list };
       }, systemCtx);
@@ -1027,6 +1050,7 @@ export default class ResidencyManager {
     const field = fieldOf(type);
     // A correction that changes the type moves the entry to the other list, in the same write.
     const fromField = change.op === 'correct' && change.at.type !== change.link.type ? fieldOf(change.at.type) : field;
+    const ownerOf = await this.ownerMetadata(ctx, username);
     const { metadata: whoMetadata, ...who } = changes.host.actorOf(ctx);
     let planned: { next: unknown[]; parcel: string; fields: string[]; left?: unknown[] } | null = null;
     const record = (result: 'success' | 'failure', reason?: string): AccommodationAuditRecord => ({
@@ -1034,7 +1058,7 @@ export default class ResidencyManager {
       ...who,
       result,
       action: `${type}-${change.op}`, severity: 'medium', resource: planned?.parcel ?? '', resourceType: 'accommodation',
-      metadata: { ...whoMetadata, username, owner: username, field, ...(fromField !== field ? { movedFrom: fromField } : {}), fields: planned?.fields ?? [], ...(reason ? { reason } : {}) }
+      metadata: { ...whoMetadata, ...ownerOf, field, ...(fromField !== field ? { movedFrom: fromField } : {}), fields: planned?.fields ?? [], ...(reason ? { reason } : {}) }
     });
 
     // One step from read to write (ngdpbase#2025, 5.28.0): the list is read from the account as it

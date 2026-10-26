@@ -63,11 +63,28 @@ export interface ApprovalDoors {
 /** What approve did: the account, and for a new one whether its invitation went out. */
 export interface ApprovalResult { username: string; created: boolean; invitation?: { outcome: string; reason?: string } }
 
+/**
+ * The identity store's side of "a reference stores the @id" (#2042): IdentityManager.identityIdOf
+ * (null for no account, and for a store that cannot answer) and, for the start-up conversion,
+ * canAnswer and convertReference (which throws when the store cannot answer).
+ */
+export interface IdentityDoors {
+  identityIdOf: (ctx: ActorContext, username: string) => Promise<string | null>;
+  canAnswer: () => boolean;
+  convertReference: (ctx: ActorContext, stored: string) => Promise<{ value: string; outcome: 'kept' | 'orphan' | 'converted' | 'orphaned' }>;
+}
+
+/** What the start-up conversion did, counts only (never a name). */
+export interface SubmitterConversion { converted: number; orphans: number; postponed: boolean }
+
 /** A submission as the review page shows it. */
 export interface PendingSubmission {
   id: string;
   receivedAt: string;
+  /** The submitter's identity @id; `anonymous`, `orphan:<name>`, or a name with no account, as stored. */
   submittedBy: string;
+  /** Their name, for showing. */
+  submitterName: string;
   unit: string;
   entryType: 'owner' | 'occupant';
   answers: Record<string, unknown>;
@@ -83,7 +100,10 @@ export interface OccupancyDb {
 /** A submission as the forms add-on hands it to the handler. */
 export interface OccupancySubmission {
   id: string;
+  /** The submitter's identity @id (core's forms add-on, 5.34.0 on); `anonymous` or a bare username is also accepted. */
   submittedBy: string;
+  /** The submitter's name as shown; absent, the name is `submittedBy`. */
+  submitterName?: string;
   formVersion?: string;
   data: Record<string, unknown>;
 }
@@ -116,6 +136,10 @@ export interface OccupancyManagerOptions {
   host: Pick<AddonHost, 'actorOf' | 'addonAuditEventName'>;
   /** accommodation's ResidencyManager.checkEntry: why the entry would be refused, or null. */
   checkEntry: (entry: { parcel: string; type: 'owner' | 'occupant'; from: string; to: string }) => string | null;
+  /** The identity store (#2042): absent, a reference is kept as given. */
+  identities?: IdentityDoors;
+  /** The context the submitter's @id and the start-up conversion are read under (the system principal). */
+  systemContext?: () => ActorContext;
   /** Tell the holders of association-review that a submission waits. Must not throw. */
   notifyReviewers: (title: string, message: string) => Promise<void>;
   now?: () => Date;
@@ -155,6 +179,9 @@ export default class OccupancyManager {
     if (problem) return { ok: false, error: `Not accepted: ${problem}` };
 
     const answered = Object.keys(data).filter(k => answer(data, k) !== '').sort();
+    // Who sent it, by identity @id (#2042): kept as given when it already is one, or has no account.
+    const submitterName = submission.submitterName?.trim() || submission.submittedBy;
+    const submittedBy = await this.referenceOf(submission.submittedBy);
     const { metadata: whoMetadata, ...who } = this.options.host.actorOf(ctx);
     const record = (result: 'success' | 'failure', reason?: string): OccupancyAuditRecord => ({
       eventType: this.options.host.addonAuditEventName('occupancy-submit'),
@@ -168,8 +195,8 @@ export default class OccupancyManager {
     await this.options.recordAudit(record('success'));
     try {
       this.options.db.prepare(`INSERT INTO association_occupancy_submissions
-        (id, received_at, submitted_by, form_version, unit, entry_type, answers) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .run(submission.id, this.now().toISOString(), submission.submittedBy, submission.formVersion ?? '', unit, type, JSON.stringify(data));
+        (id, received_at, submitted_by, submitter_name, form_version, unit, entry_type, answers) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(submission.id, this.now().toISOString(), submittedBy, submitterName, submission.formVersion ?? '', unit, type, JSON.stringify(data));
     } catch (err) {
       await this.options.recordAudit(record('failure', err instanceof Error ? err.message : String(err))).catch(() => undefined);
       throw err;
@@ -182,7 +209,7 @@ export default class OccupancyManager {
   /** Every submission waiting for review, oldest first. Needs association-review. */
   async pending(ctx: ActorContext): Promise<PendingSubmission[]> {
     await this.authorize(ctx);
-    const rows = this.options.db.prepare(`SELECT id, received_at, submitted_by, unit, entry_type, answers
+    const rows = this.options.db.prepare(`SELECT id, received_at, submitted_by, submitter_name, unit, entry_type, answers
       FROM association_occupancy_submissions WHERE status = 'pending' ORDER BY received_at, id`).all() as Array<Record<string, string>>;
     const doors = this.options.approval;
     const list: PendingSubmission[] = [];
@@ -190,7 +217,7 @@ export default class OccupancyManager {
       const answers = JSON.parse(r.answers) as Record<string, unknown>;
       const found = doors ? await this.accountsFor(ctx, answer(answers, 'email')) : [];
       list.push({
-        id: r.id, receivedAt: r.received_at, submittedBy: r.submitted_by, unit: r.unit,
+        id: r.id, receivedAt: r.received_at, submittedBy: r.submitted_by, submitterName: r.submitter_name || r.submitted_by, unit: r.unit,
         entryType: r.entry_type as 'owner' | 'occupant', answers,
         ...(doors ? { accounts: found.length === 0 ? 'none' as const : found.length === 1 ? 'one' as const : 'several' as const } : {})
       });
@@ -266,13 +293,16 @@ export default class OccupancyManager {
     const existing = matches.length === 1 ? await doors.findPerson(ctx, username) : null;
     if (matches.length === 1 && !existing) throw new OccupancyReviewError(`${username} has no identity record to hold the details`);
 
+    // The owner by identity @id, their username beside it (#2042). A new account has no @id yet,
+    // so its rows carry the name; a lookup that cannot answer is null, never a failed approval.
+    const ownerId = existing?.id ?? await this.options.identities?.identityIdOf(ctx, username) ?? null;
     const { metadata: whoMetadata, ...who } = this.options.host.actorOf(ctx);
     const record = (result: 'success' | 'failure', reason?: string): OccupancyAuditRecord => ({
       eventType: this.options.host.addonAuditEventName('association-review'),
       ...who,
       result,
       action: 'occupancy-approve', severity: 'medium', resource: row.unit, resourceType: 'accommodation',
-      metadata: { ...whoMetadata, submissionId: id, entryType: row.entry_type, username, owner: username, newAccount: matches.length === 0, ...(reason ? { reason } : {}) }
+      metadata: { ...whoMetadata, submissionId: id, entryType: row.entry_type, owner: ownerId ?? username, ownerUser: username, newAccount: matches.length === 0, ...(reason ? { reason } : {}) }
     });
     // on-failure refuse: no record, no change.
     await this.options.recordAudit(record('success'));
@@ -329,6 +359,52 @@ export default class OccupancyManager {
       return failed(still, new Error(still));
     }
     return { username, created: matches.length === 0, ...(invitation ? { invitation } : {}) };
+  }
+
+  /**
+   * What to store for a user a record refers to (#2042): their identity @id; `anonymous`, an @id
+   * and an orphan as given; the username when there is no account or the store cannot answer.
+   */
+  private async referenceOf(stored: string): Promise<string> {
+    const identities = this.options.identities;
+    if (!identities || !stored || /^(urn:|orphan:)/.test(stored) || stored.toLowerCase() === 'anonymous') return stored;
+    return (await identities.identityIdOf(this.system(), stored)) ?? stored;
+  }
+
+  private system(): ActorContext {
+    if (!this.options.systemContext) throw new Error('OccupancyManager: no system context for the identity lookup');
+    return this.options.systemContext();
+  }
+
+  /**
+   * Once, at start-up (#2042): every stored `submitted_by` that is still a username becomes
+   * IdentityManager.convertReference's answer, the name kept in `submitter_name`: the identity's
+   * @id, or `orphan:<name>` when the name has no account (nobody's from then on, so a later account
+   * with that name never takes it over). @ids, orphans and `anonymous` are left alone, so a second
+   * start writes nothing. When the identity store cannot answer, nothing is written and the pass is
+   * postponed to the next start. Counts only; no name is logged.
+   */
+  async convertSubmitters(): Promise<SubmitterConversion> {
+    const identities = this.options.identities;
+    if (!identities) return { converted: 0, orphans: 0, postponed: false };
+    if (!identities.canAnswer()) return { converted: 0, orphans: 0, postponed: true };
+    const ctx = this.system();
+    const rows = this.options.db.prepare(`SELECT id, submitted_by, submitter_name FROM association_occupancy_submissions`).all() as Array<Record<string, string>>;
+    let converted = 0, orphans = 0;
+    try {
+      for (const r of rows) {
+        const { value, outcome } = await identities.convertReference(ctx, r.submitted_by);
+        if (outcome === 'orphan' || outcome === 'orphaned') orphans++;
+        if (value === r.submitted_by) continue;
+        // One write per submission; the guard on submitted_by keeps a concurrent change.
+        this.options.db.prepare(`UPDATE association_occupancy_submissions SET submitted_by = ?, submitter_name = ? WHERE id = ? AND submitted_by = ?`)
+          .run(value, r.submitter_name || r.submitted_by, r.id, r.submitted_by);
+        if (outcome === 'converted') converted++;
+      }
+    } catch {
+      return { converted, orphans, postponed: true };
+    }
+    return { converted, orphans, postponed: false };
   }
 
   /** The accounts whose email is exactly this one, found as the reviewer. */

@@ -1,6 +1,6 @@
 {
   "name": "@jwilleke/association-addon",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A unit owners association's rules on top of accommodation, for ngdpbase",
   "license": "Apache-2.0",
   "private": true,
@@ -14,7 +14,7 @@
     "node": ">=24.15.0"
   },
   "devDependencies": {
-    "@jwilleke/ngdpbase-types": "5.30.0",
+    "@jwilleke/ngdpbase-types": "5.34.0",
     "@types/express": "^5.0.0",
     "@types/node": "^24.19.1",
     "typescript": "^6.0.3",
@@ -23,7 +23,7 @@
   "ngdpbase": {
     "slug": "association",
     "type": "additive",
-    "minVersion": "5.30.0",
+    "minVersion": "5.34.0",
     "aboutPage": "using-association"
   },
   "scripts": {
