@@ -194,11 +194,7 @@ const AccommodationAddon = {
     // Carries out an approved request to change the owners (#40), as the reviewer. Registered on
     // every start, so a site that turns reviews on later works.
     const reviewed = residency;
-    try {
-      host.registerReviewHandler(OWNERSHIP_REQUEST, (request, ctx) => reviewed.applyOwnershipRequest(ctx, request));
-    } catch (err) {
-      host.logger.warn(`[accommodation] Owners' requests to change the owners cannot be approved here: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    host.registerReviewHandler(OWNERSHIP_REQUEST, (request, ctx) => reviewed.applyOwnershipRequest(ctx, request));
 
     // Billing kept in the earlier shape (owners named, a structured address) becomes billing entries,
     // once (ngdpbase#2042): each unit in its own write, under the system context; counts only in the log.

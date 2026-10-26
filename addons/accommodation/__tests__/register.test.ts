@@ -13,6 +13,15 @@ import AccommodationPlugin from '../plugins/AccommodationPlugin.js';
 import { SAMPLE_ACCOMMODATIONS, SAMPLE_USERS } from './fixtures.js';
 
 const defaults = JSON.parse(readFileSync(new URL('../config/default-config.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+
+/**
+ * The test kit's host with a stand-in for core's review door: a host built with no site has no
+ * ReviewManager, so registerReviewHandler throws (ngdpbase core, 2026-10-26). Records the handlers.
+ */
+const handlers = new Map<string, unknown>();
+function hostForTest() {
+  return { ...buildAddonHost('accommodation', defaults), registerReviewHandler: (id: string, handler: unknown) => { handlers.set(id, handler); } };
+}
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { ngdpbase: { slug: string } };
 
 function fakeEngine() {
@@ -49,7 +58,7 @@ describe('accommodation register()', () => {
 
   test('registers the managers, the plugin, the API and the capability', async () => {
     const engine = fakeEngine();
-    await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
+    await AccommodationAddon.register(engine, { dataPath }, hostForTest());
     expect(engine.managers.get('AccommodationManager')).toBeDefined();
     expect(engine.managers.get('ResidencyManager')).toBeDefined();
     expect(engine.plugins.get('Accommodation')).toBe(AccommodationPlugin);
@@ -67,7 +76,7 @@ describe('accommodation register()', () => {
     const asked: unknown[] = [];
     engine.managers.set('UserManager', { searchUsers: async (_q: string, _o: unknown, ctx: unknown) => { asked.push(ctx); return SAMPLE_USERS; } });
     writeFileSync(path.join(dataPath, 'accommodations.json'), JSON.stringify(SAMPLE_ACCOMMODATIONS));
-    await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
+    await AccommodationAddon.register(engine, { dataPath }, hostForTest());
     asked.length = 0; // start-up reads the users once to give ownership entries their period (#43)
     const status = await AccommodationAddon.status();
     // only 66-00001.000 keeps billing entries: the other two cannot be invoiced (ngdpbase#2042)
@@ -89,8 +98,9 @@ describe('accommodation register()', () => {
       removeRole: async (...a: unknown[]) => { changes.push(['remove', ...a]); return true; }
     });
     engine.managers.set('UserManager', { searchUsers: async () => [SAMPLE_USERS[0]] });
-    await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
+    await AccommodationAddon.register(engine, { dataPath }, hostForTest());
     expect(jobs.map(j => [j.id, j.schedule])).toEqual([['accommodation.roles', 'daily 00:05']]);
+    expect([...handlers.keys()]).toEqual(['accommodation.ownership-change']); // the owners' requests (#40)
     const jobCtx = { username: 'system', origin: 'schedule', reason: 'test' };
     const result = await jobs[0].run(() => undefined, jobCtx);
     expect(result).toEqual({ success: true, summary: '1 role(s) assigned, 0 removed, 0 left alone (unreadable entries)' });
@@ -108,7 +118,7 @@ describe('accommodation register()', () => {
       removeRole: async () => true
     });
     engine.managers.set('UserManager', { searchUsers: async () => [SAMPLE_USERS[0]] });
-    await AccommodationAddon.register(engine, { dataPath }, buildAddonHost('accommodation', defaults));
+    await AccommodationAddon.register(engine, { dataPath }, hostForTest());
     const result = await jobs[0].run(() => undefined, { username: 'system', origin: 'schedule', reason: 'test' });
     expect(result).toMatchObject({ success: false, error: '1 role change(s) refused: assign owner for pat.example: role save failed' });
     await AccommodationAddon.shutdown();
