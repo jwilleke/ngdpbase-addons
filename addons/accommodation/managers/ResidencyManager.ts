@@ -739,7 +739,8 @@ export default class ResidencyManager {
   /**
    * The ownership really changed (#43; operator, 2026-10-26): a sale, an owner added or removed, a
    * transfer on death, or new shares. From `on`, the unit's owners are exactly `owners`, in a new
-   * ownership period, so accounting bills them on a new folio. Needs `accommodation-manage`, and
+   * ownership period, so accounting bills them on a new folio. Needs `accommodation-manage` (an
+   * approved owner's request runs it as the system, applyOwnershipRequest), and
    * `user-create` when someone new is named (made with no password; invited only when asked and
    * they have an email). Everything is checked before anything is written: a date after the current
    * period began, shares that add up to 100, each person once. Then any new accounts are made, every
@@ -752,9 +753,7 @@ export default class ResidencyManager {
     const changes = this.changes;
     if (!changes) throw new Error('ResidencyManager was started without its write side');
     const decision = await changes.decide(ctx, { action: 'accommodation-manage' });
-    if (!decision.permit && !(await changes.decide(ctx, { action: 'accommodation-ownership-review' })).permit) {
-      throw new AccommodationRefusedError('accommodation-manage', decision);
-    }
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-manage', decision);
     const { current, fresh, all, shareOf } = await this.checkOwnershipChange(ctx, id, on, owners);
     if (fresh.length > 0) {
       if (!changes.createUser || !changes.inviteUser) throw new Error('ResidencyManager was started without its account door');
@@ -855,13 +854,16 @@ export default class ResidencyManager {
   }
 
   /**
-   * Carries out an approved request to change the owners (#40), as the reviewer: reads the unit,
-   * the date and each owner and share back from the request's details, and applies them through
-   * changeOwnership, which asks the reviewer's `accommodation-ownership-review` (or
-   * `accommodation-manage`), and `user-create` for someone new. Throws, leaving the request open
-   * with the reason, when the details do not read or the change is refused.
+   * Carries out an approved request to change the owners (#40). Core has already checked that the
+   * decider holds `accommodation-ownership-review`, the only permission approving needs (operator,
+   * 2026-10-26: the executive is read-only except for deciding Board reviews). So the work, new
+   * accounts included, is done under the system context, with a reason naming the request and the
+   * decider taken from `ctx`: the audit shows who approved and that the system carried it out.
+   * Reads the unit, the date and each owner and share back from the request's details. Throws,
+   * leaving the request open with the reason, when the details do not read or the change is refused.
    */
-  async applyOwnershipRequest(ctx: ActorContext, request: { details: Record<string, string | number | boolean | null> }): Promise<{ summary: string }> {
+  async applyOwnershipRequest(ctx: ActorContext, request: { id?: string; details: Record<string, string | number | boolean | null> }): Promise<{ summary: string }> {
+    if (!this.systemContext) throw new Error('ResidencyManager was started without its system context');
     const d = request.details;
     const id = String(d['Unit'] ?? '');
     const on = String(d['Date the ownership changes'] ?? '');
@@ -873,7 +875,8 @@ export default class ResidencyManager {
       owners.push(isNew ? { name: who, email: String(isNew).startsWith('yes, ') ? String(isNew).slice(5) : '', share } : { username: who, share });
     }
     if (!id || owners.length === 0) throw new Error('This request does not say which unit or owners; reject it, and the owner can ask again.');
-    const done = await this.changeOwnership(ctx, id, on, owners);
+    const system = this.systemContext(`accommodation: owner-change request ${request.id ?? '(no id)'} approved by ${ctx.username ?? 'unknown'}`);
+    const done = await this.changeOwnership(system, id, on, owners);
     return { summary: `The owners of unit ${id} changed from ${on}${done.made.length ? `; new account(s): ${done.made.join(', ')}` : ''}.` };
   }
 

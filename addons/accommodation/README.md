@@ -185,8 +185,10 @@ sees none, and is pointed at the Occupancy information form.
   operator, 2026-10-26): an owner gives the date and every owner from it with their share, naming
   someone new by name and, if known, email. `ResidencyManager.requestOwnershipChange` checks it as a
   change of ownership is checked, then files it with core's reviews for the holders of
-  `accommodation-ownership-review`; nothing changes until one approves. Approving applies it through
-  `changeOwnership`, as the reviewer, in a new ownership period. Co-owners are shown by name only.
+  `accommodation-ownership-review`; nothing changes until one approves, and approving needs only that
+  permission. The approval is carried out through `changeOwnership` under the system context, its
+  reason naming the request and who approved it, in a new ownership period. Co-owners are shown by
+  name only.
 - A person's own phones and emergency contact are theirs to change on `/profile` (core).
 - The mapping from the form's answers to identity-record fields (`address`, and `contactPoint` entries
   typed by `contactType`) lives in `managers/contactDetails.ts`. association's approve uses it through

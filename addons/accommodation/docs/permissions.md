@@ -121,15 +121,16 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   reviews (`/reviews`) (operator, 2026-10-26: the Board approves). Approving applies the change: the
   current owners end the day before its date and the new owners start on it, in a new ownership
   period, which accounting bills as a new folio.
-- __Implies:__ naming someone new makes an account, so the holder also needs `user-create`; a site's
-  policy grants the two together.
-- __Checked:__ by `ResidencyManager.changeOwnership` with the reviewer's context, when core calls the
-  add-on's review handler (`accommodation.ownership-change`). It does not need `accommodation-manage`.
-- __Granted:__ to admins in accommodation's own policy. A site grants it, with `user-create`, to its
-  Board in its own policy.
+- __The only permission approving needs__ (operator, 2026-10-26: the executive is read-only except
+  for deciding Board reviews). Core checks it when the request is decided. The add-on's review handler
+  (`accommodation.ownership-change`) then does the work, new accounts included, under the system
+  context, with a reason naming the request and the decider.
+- __Granted:__ to admins in accommodation's own policy; a site grants it to its Board in its own
+  policy, and core's Executive Hub to `executive`
+  ([ngdpbase#2092](https://github.com/jwilleke/ngdpbase/issues/2092)).
 - __Recorded:__ core records the request and the decision (`review-filed`, `review-approved`,
-  `review-rejected`); each entry the approval writes is recorded as `accommodation-manage`, naming the
-  reviewer.
+  `review-rejected`); each entry the approval writes is recorded as `accommodation-manage` by the
+  system, its reason naming the request and the decider.
 
 ### accommodation-maintenance-read
 

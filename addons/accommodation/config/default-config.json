@@ -45,7 +45,7 @@
       }
     },
     "accommodation-ownership-review": {
-      "description": "Decide an owner's request to change a unit's owners or shares, on core's reviews (/reviews). Approving it applies the change as a new ownership period, which starts a new folio in accounting; naming someone new also needs user-create",
+      "description": "Decide an owner's request to change a unit's owners or shares, on core's reviews (/reviews). Approving it is all the holder needs: the add-on applies the change as the system, naming the request and who approved it, as a new ownership period, which starts a new folio in accounting",
       "label": "Approve changes of owners",
       "icon": "user-check",
       "color": "#6610f2"
@@ -103,7 +103,7 @@
     {
       "id": "accommodation-admin-access",
       "name": "Accommodation administration",
-      "description": "Admins see and manage accommodations, and get its notices. A site grants accommodation-read, accommodation-manage or accommodation-notices to its board or treasurer, and accommodation-ownership-review (with user-create) to its Board, in its own policy.",
+      "description": "Admins see and manage accommodations, and get its notices. A site grants accommodation-read, accommodation-manage or accommodation-notices to its board or treasurer, and accommodation-ownership-review to its Board, in its own policy.",
       "priority": 90,
       "effect": "allow",
       "subjects": [

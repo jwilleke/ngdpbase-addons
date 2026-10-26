@@ -17,7 +17,8 @@ const as = (username: string) => ({ username, roles: [], isAuthenticated: true }
 const treasurer = as('treasurer');
 const GRANTS: Record<string, string[]> = {
   treasurer: ['accommodation-manage', 'user-create', 'accommodation-billing-read'], clerk: ['accommodation-manage'],
-  board: ['accommodation-ownership-review', 'user-create'], 'pat.example': ['accommodation-self'], 'lee.renter': ['accommodation-self']
+  board: ['accommodation-ownership-review'], 'pat.example': ['accommodation-self'], 'lee.renter': ['accommodation-self'],
+  system: ['accommodation-manage', 'user-create']
 };
 
 function open(start: UserRecord[] = SAMPLE_USERS) {
@@ -25,6 +26,7 @@ function open(start: UserRecord[] = SAMPLE_USERS) {
   const audits: Array<Record<string, unknown>> = [];
   const made: string[] = [];
   const filed: Array<Record<string, unknown>> = [];
+  const systemReasons: string[] = [];
   const units = SAMPLE_ACCOMMODATIONS.map(u => ({ ...u, billing: [{ address: 'A' }] }));
   const decide = async (c: ActorContext, { action }: { action: string }) =>
     ({ permit: (GRANTS[(c as { username?: string }).username ?? ''] ?? []).includes(action), applicable: true, reason: 'test' });
@@ -33,7 +35,7 @@ function open(start: UserRecord[] = SAMPLE_USERS) {
     accommodation: (id) => units.find(u => u.id === id),
     today: () => TEST_TODAY,
     decide,
-    systemContext: (reason) => ({ username: 'system', reason }) as unknown as ActorContext,
+    systemContext: (reason) => { systemReasons.push(reason); return ({ username: 'system', reason }) as unknown as ActorContext; },
     identities: { find: async (_c, username) => ({ id: `urn:uuid:${username}` }), update: async () => undefined },
     reviews: { fileRequest: async (c, input) => { filed.push({ by: (c as { username?: string }).username, ...input }); return { id: `r${filed.length}` }; } },
     changes: {
@@ -47,7 +49,7 @@ function open(start: UserRecord[] = SAMPLE_USERS) {
       inviteUser: async () => ({ outcome: 'sent' })
     }
   });
-  return { m, audits, made, filed, ownership: (u: string) => users.find(x => x.username === u)?.ownership as Array<Record<string, unknown>> | undefined };
+  return { m, audits, made, filed, systemReasons, ownership: (u: string) => users.find(x => x.username === u)?.ownership as Array<Record<string, unknown>> | undefined };
 }
 
 describe('ownership periods (#43)', () => {
@@ -168,17 +170,18 @@ describe('ownership periods (#43)', () => {
     expect(t.filed).toEqual([]);
   });
 
-  test('the Board approves: applied as the reviewer, with the review permission alone, in a new period', async () => {
+  test('the Board approves: carried out by the system, naming the request and the decider, in a new period', async () => {
     const t = open();
     await t.m.requestOwnershipChange(as('pat.example'), '66-00001.000', '2026-11-01', [
       { name: 'Pat Example', share: 50 }, { name: 'Sam Example', share: 25 }, { name: 'Ann Lee', share: 25 }
     ]);
-    const result = await t.m.applyOwnershipRequest(as('board'), t.filed[0] as never);
+    const result = await t.m.applyOwnershipRequest(as('board'), { id: 'r1', ...t.filed[0] } as never);
     expect(result.summary).toBe('The owners of unit 66-00001.000 changed from 2026-11-01; new account(s): ann.lee.');
     expect(t.ownership('ann.lee')?.[0]).toMatchObject({ ownedFrom: '2026-11-01', share: 25 });
     expect(t.ownership('pat.example')?.[1].period).toBe(t.ownership('ann.lee')?.[0].period);
     expect(t.audits.length).toBeGreaterThan(0);
-    expect(t.audits.every(a => a.user === 'board')).toBe(true); // recorded as the Board member
-    await expect(t.m.applyOwnershipRequest(as('lee.renter'), t.filed[0] as never)).rejects.toMatchObject({ permission: 'accommodation-manage' });
+    // the system carried it out; the reason names the request and who approved it
+    expect(t.audits.every(a => a.user === 'system')).toBe(true);
+    expect(t.systemReasons).toContain('accommodation: owner-change request r1 approved by board');
   });
 });
