@@ -163,7 +163,8 @@ operator settles it.
 | [#43](https://github.com/jwilleke/ngdpbase-addons/issues/43) | Ownership periods as their own record; billing() gives the period | P1 |
 | [#40](https://github.com/jwilleke/ngdpbase-addons/issues/40) | Owner and share requests through core's review door; blocked by #43 | P1 |
 | [#44](https://github.com/jwilleke/ngdpbase-addons/issues/44) | Charge lines: Reserve 61.49% and Operating | P1 |
-| ngdp-accounting-addons | Folios; payables with a unit tag on money out (filed there) | P1, P2 |
+| [accounting#75](https://github.com/jwilleke/ngdp-accounting-addons/issues/75) | Folios (accounting D-048); blocked by #43 | P1 |
+| [accounting#76](https://github.com/jwilleke/ngdp-accounting-addons/issues/76) | Payables, and a unit tag on money out (accounting D-049) | P2 |
 | [#45](https://github.com/jwilleke/ngdpbase-addons/issues/45) | The work-orders add-on | P2 |
 | [#46](https://github.com/jwilleke/ngdpbase-addons/issues/46) | A generic bill any add-on can hand accounting | P2 |
 | [#47](https://github.com/jwilleke/ngdpbase-addons/issues/47) | Split charges by percentage of interest | P2 |
