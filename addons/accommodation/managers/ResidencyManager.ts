@@ -154,6 +154,8 @@ export interface OwnUnit {
   owners: Array<{ name: string }>;
   /** To an owner, each occupant's entry too, so the owner can end it (#37). */
   occupants: Array<{ name: string; email?: string; entry?: { username: string; at: EntryRef }; details?: Record<string, string> }>;
+  /** To an owner, the current owners by name with their shares (#40). */
+  ownerShares?: Array<{ name: string; share: number }>;
   /** To an owner, where the unit's invoices go, as the form shows it, to change it (ngdpbase#2042). */
   billing?: BillingForm;
 }
@@ -165,7 +167,17 @@ export interface IdentityDoor {
   update: (systemCtx: ActorContext, id: string, patch: Record<string, unknown>) => Promise<unknown>;
 }
 
+/** core's review door (host.reviews, ngdpbase#2072): files an owner's request for the Board to decide. */
+export interface ReviewDoor {
+  fileRequest: (ctx: ActorContext, input: { kind: string; subject: string; summary: string; details: Record<string, string | number | boolean | null>; decidePermission: string; handlerId: string }) => Promise<{ id: string }>;
+}
+
+/** The kind and handler of an owner's request to change the owners (#40). */
+export const OWNERSHIP_REQUEST = 'accommodation.ownership-change';
+
 export interface ResidencyManagerOptions {
+  /** core's review door, for an owner's request to change the owners (#40). */
+  reviews?: ReviewDoor;
   /** core's IdentityManager: occupants' contact details for an owner (#37). */
   identities?: IdentityDoor;
   /** ngdpbase's decision point, for a resident's own reads (#36). */
@@ -241,10 +253,12 @@ export default class ResidencyManager {
   private readonly changes: ResidencyChanges | undefined;
   private readonly decide: Decide | undefined;
   private readonly identities: IdentityDoor | undefined;
+  private readonly reviews: ReviewDoor | undefined;
   private readonly systemContext: ((reason: string) => ActorContext) | undefined;
 
   constructor(options: ResidencyManagerOptions) {
     this.decide = options.decide;
+    this.reviews = options.reviews;
     this.identities = options.identities;
     this.systemContext = options.systemContext;
     this.users = options.users ?? (() => Promise.resolve([]));
@@ -460,6 +474,10 @@ export default class ResidencyManager {
       const unit: OwnUnit = {
         id, as,
         owners: holding('owner').map(o => ({ name: o.name })),
+        // To an owner, each owner's share, to ask for a change of owners (#40).
+        ...(as.includes('owner') ? { ownerShares: users.flatMap(u => readLinks(u).links
+          .filter(l => l.parcel === id && l.type === 'owner' && holdsOn(l, today))
+          .map(l => ({ name: memberOf(u).name, share: l.share ?? 0 }))) } : {}),
         occupants: users.flatMap(u => readEntries(u).entries
           .filter(e => e.link && e.link.parcel === id && e.link.type === 'occupant' && holdsOn(e.link, today))
           .map(e => {
@@ -734,7 +752,37 @@ export default class ResidencyManager {
     const changes = this.changes;
     if (!changes) throw new Error('ResidencyManager was started without its write side');
     const decision = await changes.decide(ctx, { action: 'accommodation-manage' });
-    if (!decision.permit) throw new AccommodationRefusedError('accommodation-manage', decision);
+    if (!decision.permit && !(await changes.decide(ctx, { action: 'accommodation-ownership-review' })).permit) {
+      throw new AccommodationRefusedError('accommodation-manage', decision);
+    }
+    const { current, fresh, all, shareOf } = await this.checkOwnershipChange(ctx, id, on, owners);
+    if (fresh.length > 0) {
+      if (!changes.createUser || !changes.inviteUser) throw new Error('ResidencyManager was started without its account door');
+      const decision = await changes.decide(ctx, { action: 'user-create' });
+      if (!decision.permit) throw new AccommodationRefusedError('user-create', decision);
+    }
+
+    const period = randomUUID();
+    for (const f of fresh) {
+      await changes.createUser!(ctx, { username: f.username, ...(f.email ? { email: f.email } : {}), displayName: f.name });
+      if (f.invite && f.email) await changes.inviteUser!(ctx, f.username);
+    }
+    for (const e of current) {
+      await this.writeLink(ctx, e.username, { op: 'end', at: { type: 'owner', index: e.index, expected: e.expected }, on: previousDay(on) }, false);
+    }
+    for (const username of all) {
+      await this.writeLink(ctx, username, { op: 'add', link: { parcel: id, type: 'owner', from: on, to: 'current', share: shareOf.get(username), period } }, false);
+    }
+    return { period, made: fresh.map(f => f.username) };
+  }
+
+  /**
+   * A change of ownership checked, writing nothing: the unit, the date (after the current owners
+   * began), the shares (adding up to 100), each person once, existing accounts named, and new people
+   * (checkNewPerson). Read as the context given.
+   */
+  private async checkOwnershipChange(ctx: ActorContext, id: string, on: string,
+    owners: Array<{ username?: string; name?: string; email?: string; invite?: boolean; share: number }>) {
     if (!this.accommodation(id)) throw new LinkChangeRefusedError(`no accommodation ${id}`);
     if (!isIsoDate(on)) throw new LinkChangeRefusedError(`the date the ownership changed must be a date YYYY-MM-DD, not ${on || 'empty'}`);
     if (owners.length === 0) throw new LinkChangeRefusedError('name at least one owner from that date');
@@ -753,25 +801,80 @@ export default class ResidencyManager {
     for (const u of named) if (!users.some(x => x.username === u)) throw new LinkChangeRefusedError(`no account named ${u}`);
     const all = [...named, ...fresh.map(f => f.username)];
     if (new Set(all).size !== all.length) throw new LinkChangeRefusedError('each owner can be named only once');
-    if (fresh.length > 0) {
-      if (!changes.createUser || !changes.inviteUser) throw new Error('ResidencyManager was started without its account door');
-      const decision = await changes.decide(ctx, { action: 'user-create' });
-      if (!decision.permit) throw new AccommodationRefusedError('user-create', decision);
-    }
-
-    const period = randomUUID();
-    for (const f of fresh) {
-      await changes.createUser!(ctx, { username: f.username, ...(f.email ? { email: f.email } : {}), displayName: f.name });
-      if (f.invite && f.email) await changes.inviteUser!(ctx, f.username);
-    }
-    for (const e of current) {
-      await this.changeLink(ctx, e.username, { op: 'end', at: { type: 'owner', index: e.index, expected: e.expected }, on: previousDay(on) });
-    }
     const shareOf = new Map([...owners.filter(o => o.username).map(o => [o.username as string, o.share] as const), ...fresh.map(f => [f.username, f.share] as const)]);
-    for (const username of all) {
-      await this.changeLink(ctx, username, { op: 'add', link: { parcel: id, type: 'owner', from: on, to: 'current', share: shareOf.get(username), period } });
+    return { current, fresh, all, shareOf };
+  }
+
+  /**
+   * A current owner asks for a change of owners or shares (#40; operator, 2026-10-26: the Board
+   * approves). Decided with the owner's context: `accommodation-self` and a current owner of the
+   * unit. The change is checked as changeOwnership checks it, under the system context, then filed
+   * with core's reviews for the holders of `accommodation-ownership-review`; nothing changes until
+   * one of them approves. Someone new is named by name and, if known, email; an email already on an
+   * account names that account. The request's details say each owner and share in plain words, and
+   * are what applyOwnershipRequest carries out.
+   */
+  async requestOwnershipChange(ctx: ActorContext, id: string, on: string, owners: Array<{ name?: string; email?: string; share: number; username?: string }>): Promise<{ request: string }> {
+    if (!this.decide || !this.systemContext || !this.reviews) throw new Error('ResidencyManager was started without its review door');
+    const decision = await this.decide(ctx, { action: 'accommodation-self' });
+    if (!decision.permit) throw new AccommodationRefusedError('accommodation-self', decision);
+    const me = ctx.username ?? '';
+    const system = this.systemContext(`accommodation: a change of owners of unit ${id}, asked for by its owner ${me}`);
+    if (!(await this.owners(system, id)).some(o => o.username === me)) throw new LinkChangeRefusedError(`you are not a current owner of unit ${id}`);
+    const users = await this.users(system);
+    // A current owner is named by their name, as the owner's page shows them; an email already on an
+    // account names that account; anyone else is someone new. The page never shows usernames.
+    const currentOwners = await this.owners(system, id);
+    const named = owners.map(o => {
+      if (o.username) return o;
+      const same = currentOwners.filter(c => c.name.toLowerCase() === (o.name ?? '').trim().toLowerCase());
+      if (same.length === 1) return { username: same[0].username, share: o.share };
+      const email = (o.email ?? '').trim().toLowerCase();
+      const holder = email ? users.find(u => (u.email ?? '').trim().toLowerCase() === email) : undefined;
+      return holder ? { username: holder.username, share: o.share } : o;
+    });
+    const { all, fresh, shareOf } = await this.checkOwnershipChange(system, id, on, named);
+    const label = (username: string): string => {
+      const f = fresh.find(x => x.username === username);
+      return f ? `${f.name} (new${f.email ? `, ${f.email}` : ''})` : memberOf(users.find(u => u.username === username) as UserRecord).name;
+    };
+    const details: Record<string, string | number> = { Unit: id, 'Date the ownership changes': on };
+    all.forEach((username, i) => {
+      const f = fresh.find(x => x.username === username);
+      details[`Owner ${i + 1}`] = f ? f.name : username;
+      details[`Owner ${i + 1} share`] = shareOf.get(username) as number;
+      if (f) details[`Owner ${i + 1} is new`] = f.email ? `yes, ${f.email}` : 'yes';
+    });
+    const filed = await this.reviews.fileRequest(ctx, {
+      kind: OWNERSHIP_REQUEST, handlerId: OWNERSHIP_REQUEST, decidePermission: 'accommodation-ownership-review',
+      subject: `Unit ${id}`,
+      summary: `From ${on}, the owners of unit ${id}: ${all.map(u => `${label(u)} ${shareOf.get(u)}%`).join(', ')}`,
+      details
+    });
+    return { request: filed.id };
+  }
+
+  /**
+   * Carries out an approved request to change the owners (#40), as the reviewer: reads the unit,
+   * the date and each owner and share back from the request's details, and applies them through
+   * changeOwnership, which asks the reviewer's `accommodation-ownership-review` (or
+   * `accommodation-manage`), and `user-create` for someone new. Throws, leaving the request open
+   * with the reason, when the details do not read or the change is refused.
+   */
+  async applyOwnershipRequest(ctx: ActorContext, request: { details: Record<string, string | number | boolean | null> }): Promise<{ summary: string }> {
+    const d = request.details;
+    const id = String(d['Unit'] ?? '');
+    const on = String(d['Date the ownership changes'] ?? '');
+    const owners: Array<{ username?: string; name?: string; email?: string; share: number }> = [];
+    for (let i = 1; d[`Owner ${i}`] !== undefined; i++) {
+      const who = String(d[`Owner ${i}`]);
+      const isNew = d[`Owner ${i} is new`];
+      const share = Number(d[`Owner ${i} share`]);
+      owners.push(isNew ? { name: who, email: String(isNew).startsWith('yes, ') ? String(isNew).slice(5) : '', share } : { username: who, share });
     }
-    return { period, made: fresh.map(f => f.username) };
+    if (!id || owners.length === 0) throw new Error('This request does not say which unit or owners; reject it, and the owner can ask again.');
+    const done = await this.changeOwnership(ctx, id, on, owners);
+    return { summary: `The owners of unit ${id} changed from ${on}${done.made.length ? `; new account(s): ${done.made.join(', ')}` : ''}.` };
   }
 
   /** The ownership period an owner added on `date` joins: the one the unit's owners hold then, else a new one. */
@@ -900,7 +1003,17 @@ export default class ResidencyManager {
     const decision = await changes.decide(ctx, { action: 'accommodation-manage' });
     const byOwner = !decision.permit && await this.ownerMayChange(ctx, username, change);
     if (!decision.permit && !byOwner) throw new AccommodationRefusedError('accommodation-manage', decision);
+    return this.writeLink(ctx, username, change, byOwner);
+  }
 
+  /**
+   * changeLink once the caller is allowed: checks the entry, records it first, and writes it. Also
+   * what changeOwnership uses after its own decision, so a Board member approving a request needs
+   * the review permission, not `accommodation-manage`.
+   */
+  private async writeLink(ctx: ActorContext, username: string, change: LinkChange, byOwner: boolean): Promise<LinkChangeResult> {
+    const changes = this.changes;
+    if (!changes) throw new Error('ResidencyManager was started without its write side');
     if (!(await this.users(ctx)).some(u => u.username === username)) throw new LinkChangeRefusedError(`no account named ${username}`);
     // An owner added as a correction joins the unit's ownership period on its start date (#43);
     // a correction of an entry keeps the period the entry has.

@@ -15,12 +15,16 @@ const defaults = JSON.parse(readFileSync(new URL('../config/default-config.json'
 const host = buildAddonHost('accommodation', defaults);
 const as = (username: string) => ({ username, roles: [], isAuthenticated: true }) as unknown as ActorContext;
 const treasurer = as('treasurer');
-const GRANTS: Record<string, string[]> = { treasurer: ['accommodation-manage', 'user-create', 'accommodation-billing-read'], clerk: ['accommodation-manage'] };
+const GRANTS: Record<string, string[]> = {
+  treasurer: ['accommodation-manage', 'user-create', 'accommodation-billing-read'], clerk: ['accommodation-manage'],
+  board: ['accommodation-ownership-review', 'user-create'], 'pat.example': ['accommodation-self'], 'lee.renter': ['accommodation-self']
+};
 
 function open(start: UserRecord[] = SAMPLE_USERS) {
   let users: UserRecord[] = structuredClone(start);
   const audits: Array<Record<string, unknown>> = [];
   const made: string[] = [];
+  const filed: Array<Record<string, unknown>> = [];
   const units = SAMPLE_ACCOMMODATIONS.map(u => ({ ...u, billing: [{ address: 'A' }] }));
   const decide = async (c: ActorContext, { action }: { action: string }) =>
     ({ permit: (GRANTS[(c as { username?: string }).username ?? ''] ?? []).includes(action), applicable: true, reason: 'test' });
@@ -31,6 +35,7 @@ function open(start: UserRecord[] = SAMPLE_USERS) {
     decide,
     systemContext: (reason) => ({ username: 'system', reason }) as unknown as ActorContext,
     identities: { find: async (_c, username) => ({ id: `urn:uuid:${username}` }), update: async () => undefined },
+    reviews: { fileRequest: async (c, input) => { filed.push({ by: (c as { username?: string }).username, ...input }); return { id: `r${filed.length}` }; } },
     changes: {
       host, decide,
       recordAudit: async (r) => { audits.push(r as never); },
@@ -42,7 +47,7 @@ function open(start: UserRecord[] = SAMPLE_USERS) {
       inviteUser: async () => ({ outcome: 'sent' })
     }
   });
-  return { m, audits, made, ownership: (u: string) => users.find(x => x.username === u)?.ownership as Array<Record<string, unknown>> | undefined };
+  return { m, audits, made, filed, ownership: (u: string) => users.find(x => x.username === u)?.ownership as Array<Record<string, unknown>> | undefined };
 }
 
 describe('ownership periods (#43)', () => {
@@ -139,5 +144,41 @@ describe('ownership periods (#43)', () => {
       { username: 'b', link: link('u1', '2020-01-01', 'current', 'y') },
       { username: 'c', link: link('u2', '2020-01-01', 'current') }
     ])).toEqual(['unit u1: owners on 2020-01-01 are in 2 ownership periods, not one', 'unit u2: on 2020-01-01 c is in no ownership period']);
+  });
+
+  test("an owner's request is checked, then filed for the Board; nothing changes until it is approved", async () => {
+    const t = open();
+    expect(await t.m.requestOwnershipChange(as('pat.example'), '66-00001.000', '2026-11-01', [
+      { name: 'Pat Example', share: 50 }, { name: 'Sam Example', share: 25 }, { name: 'Ann Lee', email: 'ann@example.org', share: 25 }
+    ])).toEqual({ request: 'r1' });
+    expect(t.filed[0]).toMatchObject({
+      by: 'pat.example', kind: 'accommodation.ownership-change', handlerId: 'accommodation.ownership-change', decidePermission: 'accommodation-ownership-review',
+      details: { Unit: '66-00001.000', 'Date the ownership changes': '2026-11-01', 'Owner 1': 'pat.example', 'Owner 1 share': 50,
+        'Owner 2': 'sam.example', 'Owner 2 share': 25, 'Owner 3': 'Ann Lee', 'Owner 3 share': 25, 'Owner 3 is new': 'yes, ann@example.org' }
+    });
+    expect(t.audits).toEqual([]); // nothing written
+    expect(t.ownership('pat.example')).toHaveLength(1);
+  });
+
+  test('only a current owner may ask, and a request that would be refused is not filed', async () => {
+    const t = open();
+    await expect(t.m.requestOwnershipChange(as('lee.renter'), '66-00001.000', '2026-11-01', [{ name: 'Lee Renter', share: 100 }])).rejects.toThrow('not a current owner');
+    await expect(t.m.requestOwnershipChange(as('pat.example'), '66-00001.000', '2026-11-01', [{ name: 'Pat Example', share: 60 }])).rejects.toThrow('add up to 60%');
+    await expect(t.m.requestOwnershipChange(as('visitor'), '66-00001.000', '2026-11-01', [])).rejects.toMatchObject({ permission: 'accommodation-self' });
+    expect(t.filed).toEqual([]);
+  });
+
+  test('the Board approves: applied as the reviewer, with the review permission alone, in a new period', async () => {
+    const t = open();
+    await t.m.requestOwnershipChange(as('pat.example'), '66-00001.000', '2026-11-01', [
+      { name: 'Pat Example', share: 50 }, { name: 'Sam Example', share: 25 }, { name: 'Ann Lee', share: 25 }
+    ]);
+    const result = await t.m.applyOwnershipRequest(as('board'), t.filed[0] as never);
+    expect(result.summary).toBe('The owners of unit 66-00001.000 changed from 2026-11-01; new account(s): ann.lee.');
+    expect(t.ownership('ann.lee')?.[0]).toMatchObject({ ownedFrom: '2026-11-01', share: 25 });
+    expect(t.ownership('pat.example')?.[1].period).toBe(t.ownership('ann.lee')?.[0].period);
+    expect(t.audits.length).toBeGreaterThan(0);
+    expect(t.audits.every(a => a.user === 'board')).toBe(true); // recorded as the Board member
+    await expect(t.m.applyOwnershipRequest(as('lee.renter'), t.filed[0] as never)).rejects.toMatchObject({ permission: 'accommodation-manage' });
   });
 });

@@ -7,6 +7,7 @@
  *   GET  /mine                       a signed-in resident's own units (#36), under accommodation-self
  *   POST /residents/:parcel/ownership the ownership really changed: new owners and shares from a date, a new ownership period (#43)
  *   POST /residents/:parcel/billing the treasurer sets where the unit's invoices go (ngdpbase#2042)
+ *   POST /mine/:parcel/ownership-request an owner asks the Board to change the owners or shares (#40)
  *   POST /mine/:parcel/billing       an owner sets where their unit's invoices go, as the treasurer can (ngdpbase#2042)
  *   POST /mine/:parcel/occupant-end  an owner ends an occupant's entry on their unit (#37)
  *   POST /mine/:parcel/occupant-details an owner changes an occupant's phones, work and emergency contact (#37)
@@ -432,6 +433,42 @@ export default function adminRoutes(engine: Engine, host: AddonHost): Router {
           if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
           host.logger.error(`[accommodation] A change of ownership of ${parcel} failed: ${answer instanceof Error ? answer.message : String(answer)}`);
           res.status(500).send('The change of ownership was not saved');
+        }
+      }
+    })();
+  });
+
+  // An owner asks the Board to change the owners or shares (#40): filed with core's reviews,
+  // nothing changes until the Board approves. Rows are names as the page shows them, a share, and
+  // an email for someone new; a row with no share is left out.
+  router.post('/mine/:parcel/ownership-request', (req: Request, res: Response) => {
+    void (async () => {
+      const ctx = ApiContext.from(req, engine as never);
+      const parcel = String(req.params['parcel']);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const list = (v: unknown): string[] => (Array.isArray(v) ? v : v === undefined ? [] : [v]).map(x => (typeof x === 'string' ? x.trim() : ''));
+      try {
+        await ctx.requirePermission('accommodation-self');
+        const shares = list(body['ownerShare']); const emails = list(body['ownerEmail']);
+        const owners = list(body['owner']).flatMap((name, i) => (name && shares[i] ? [{ name, email: emails[i] ?? '', share: Number(shares[i]) }] : []));
+        await managers().residency.requestOwnershipChange(ctx.getActor(), parcel, text(body, 'on'), owners);
+        res.redirect('/addons/accommodation/mine?flash=ownership-requested');
+      } catch (err) {
+        try {
+          if ((err as Error).name === 'AccommodationRefusedError') {
+            const refused = err as { permission: string; decision: never };
+            await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
+          }
+          if ((err as Error).name === 'LinkChangeRefusedError' || (err as Error).name === 'ReviewsUnavailableError') {
+            const reason = (err as Error).name === 'ReviewsUnavailableError' ? 'requests cannot be filed on this site yet; ask the association' : (err as Error).message;
+            res.redirect(`/addons/accommodation/mine?flash=refused&reason=${encodeURIComponent(reason)}`);
+            return;
+          }
+          throw err;
+        } catch (answer) {
+          if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
+          host.logger.error(`[accommodation] An owner's request to change the owners failed: ${answer instanceof Error ? answer.message : String(answer)}`);
+          res.status(500).send('The request was not filed');
         }
       }
     })();

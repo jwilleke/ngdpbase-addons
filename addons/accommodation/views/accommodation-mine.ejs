@@ -5,7 +5,9 @@
   <p class="text-muted">The units you own or live in today.
     Your bills, payments and balance are on <a href="/profile">your profile</a>.</p>
 
-  <% if (flash === 'billing-saved') { %>
+  <% if (flash === 'ownership-requested') { %>
+    <div class="alert alert-success" data-testid="flash-ownership-requested">Your request was sent to the Board. Nothing changes until the Board approves it.</div>
+  <% } else if (flash === 'billing-saved') { %>
     <div class="alert alert-success" data-testid="flash-billing-saved">Billing saved. The board has been told.</div>
   <% } else if (flash === 'occupant-ended') { %>
     <div class="alert alert-success" data-testid="flash-occupant-ended">Saved: the occupant's last date is set. The board has been told.</div>
@@ -86,6 +88,28 @@
               <div class="col-md-2"><button type="submit" class="btn btn-sm btn-primary">Add</button></div>
             </form>
             <p class="small text-muted mb-0">If they have no account here, give a username: an account is made and they are emailed an invitation to set it up. It applies at once, and the board is told.</p>
+          </details>
+        <% } %>
+        <% if (u.ownerShares) { %>
+          <details class="mt-2">
+            <summary><strong>Ask the Board to change the owners</strong></summary>
+            <form method="POST" action="/addons/accommodation/mine/<%= encodeURIComponent(u.id) %>/ownership-request" class="mt-2">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <div class="mb-2">
+                <label class="form-label small" for="own-on-<%= u.id %>">Date the ownership changes</label>
+                <input type="date" id="own-on-<%= u.id %>" name="on" class="form-control form-control-sm w-auto" required>
+              </div>
+              <p class="small mb-1">Every owner from that date, with their share (they add up to 100%). Leave a share empty to drop that owner.</p>
+              <% u.ownerShares.concat([{ name: '', share: '' }, { name: '', share: '' }]).forEach(function (o, i) { %>
+                <div class="row g-2 mb-1">
+                  <div class="col-md-4"><input type="text" name="owner" class="form-control form-control-sm" value="<%= o.name %>" placeholder="Name of a new owner" aria-label="Owner <%= i + 1 %>"></div>
+                  <div class="col-md-2"><input type="number" name="ownerShare" class="form-control form-control-sm" min="0.01" max="100" step="any" value="<%= o.share %>" placeholder="Share %" aria-label="Share of owner <%= i + 1 %>"></div>
+                  <div class="col-md-3"><input type="email" name="ownerEmail" class="form-control form-control-sm" placeholder="Their email, if new" aria-label="Email of owner <%= i + 1 %>"></div>
+                </div>
+              <% }) %>
+              <button type="submit" class="btn btn-sm btn-primary mt-1">Send to the Board</button>
+            </form>
+            <p class="small text-muted mb-0">For a sale, an owner added or removed, a death, or new shares. The Board approves it before anything changes; then the new owners start on that date.</p>
           </details>
         <% } %>
         <% if (u.billing) { %>

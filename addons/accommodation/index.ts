@@ -28,7 +28,7 @@ import adminRoutes from './routes/admin.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import AccommodationManager, { createProvider, type AccommodationAuditRecord, type Decide } from './managers/AccommodationManager.js';
-import ResidencyManager, { type RoleDoor, type UserRecord } from './managers/ResidencyManager.js';
+import ResidencyManager, { OWNERSHIP_REQUEST, type RoleDoor, type UserRecord } from './managers/ResidencyManager.js';
 import { categoriesFrom } from './managers/categories.js';
 import { lateChargesFrom } from './managers/lateCharges.js';
 import { chargeLinesFrom } from './managers/chargeLines.js';
@@ -153,6 +153,8 @@ const AccommodationAddon = {
         }
       },
       systemContext: (reason) => host.systemContext(reason),
+      // An owner's request to change the owners goes to core's reviews for the Board (#40).
+      reviews: host.reviews,
       // The admin page's changes (#28): the entries are written onto the account through UserManager.
       changes: {
         decide, recordAudit, host,
@@ -189,6 +191,14 @@ const AccommodationAddon = {
       }
     });
     engine.registerManager('ResidencyManager', residency);
+    // Carries out an approved request to change the owners (#40), as the reviewer. Registered on
+    // every start, so a site that turns reviews on later works.
+    const reviewed = residency;
+    try {
+      host.registerReviewHandler(OWNERSHIP_REQUEST, (request, ctx) => reviewed.applyOwnershipRequest(ctx, request));
+    } catch (err) {
+      host.logger.warn(`[accommodation] Owners' requests to change the owners cannot be approved here: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     // Billing kept in the earlier shape (owners named, a structured address) becomes billing entries,
     // once (ngdpbase#2042): each unit in its own write, under the system context; counts only in the log.

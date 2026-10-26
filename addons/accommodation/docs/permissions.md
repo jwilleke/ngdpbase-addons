@@ -25,7 +25,7 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 | [`accommodation-manage`](#accommodation-manage) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
 | [`accommodation-notices`](#accommodation-notices) | Built ([#38](https://github.com/jwilleke/ngdpbase-addons/issues/38)) | admin |
 | [`accommodation-self`](#accommodation-self) | Seeing your own units built ([#36](https://github.com/jwilleke/ngdpbase-addons/issues/36)); changes planned ([#16](https://github.com/jwilleke/ngdpbase-addons/issues/16)) | every user, through `vault-owner` |
-| [`accommodation-review`](#accommodation-review) | Planned ([#17](https://github.com/jwilleke/ngdpbase-addons/issues/17)) | board |
+| [`accommodation-ownership-review`](#accommodation-ownership-review) | Built ([#40](https://github.com/jwilleke/ngdpbase-addons/issues/40)) | admin; a site grants its Board |
 | [`accommodation-maintenance-read`](#accommodation-maintenance-read) | Proposed | board |
 | [`accommodation-board-read`](#accommodation-board-read) | Proposed | board |
 
@@ -106,8 +106,8 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   roles or a list of roles, never to an `authenticated` subject, and never by editing a core policy
   (operator, 2026-10-24, [ngdpbase#1539](https://github.com/jwilleke/ngdpbase/issues/1539)): it is a
   permission over a person's own records.
-- __Does not:__ change owners. Adding or removing an owner, a sale, or a change of agent waits for a
-  holder of `accommodation-review`.
+- __Does not:__ change owners. An owner asks for a change of owners or shares, and it waits for a
+  holder of `accommodation-ownership-review`.
 - __Implies:__ an owner sees their occupants' contact details. An occupant sees the owners' names.
 - __Recorded:__ each change made under it is recorded, and the reviewers get an advisory notice.
 - __Billing:__ any current owner may change where the unit's invoices go, as the treasurer can: the
@@ -115,13 +115,21 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   [ngdpbase#2042](https://github.com/jwilleke/ngdpbase/issues/2042)). It applies at once, with an
   advisory notice to the Board of Directors.
 
-### accommodation-review
+### accommodation-ownership-review
 
-- __Lets a person:__ approve or refuse what waits for review: an Occupancy information form from
-  someone not signed in, and every owner change.
-- __Implies:__ approving a form can create an ngdpbase account for the person it names, so the holder
-  also needs `identity-manage`, or the add-on's policy grants it alongside.
-- __Recorded:__ each approval and refusal, by whom.
+- __Lets a person:__ decide an owner's request to change a unit's owners or shares, on core's
+  reviews (`/reviews`) (operator, 2026-10-26: the Board approves). Approving applies the change: the
+  current owners end the day before its date and the new owners start on it, in a new ownership
+  period, which accounting bills as a new folio.
+- __Implies:__ naming someone new makes an account, so the holder also needs `user-create`; a site's
+  policy grants the two together.
+- __Checked:__ by `ResidencyManager.changeOwnership` with the reviewer's context, when core calls the
+  add-on's review handler (`accommodation.ownership-change`). It does not need `accommodation-manage`.
+- __Granted:__ to admins in accommodation's own policy. A site grants it, with `user-create`, to its
+  Board in its own policy.
+- __Recorded:__ core records the request and the decision (`review-filed`, `review-approved`,
+  `review-rejected`); each entry the approval writes is recorded as `accommodation-manage`, naming the
+  reviewer.
 
 ### accommodation-maintenance-read
 
@@ -146,7 +154,7 @@ nothing until a policy grants it permissions.
 | Role | Who | Holds |
 | --- | --- | --- |
 | `admin` (core) | Site administrators | Every accommodation permission, on day one |
-| `board-member` | The association's board | Planned: `accommodation-read`, `accommodation-review`, `accommodation-maintenance-read`, `accommodation-board-read` |
+| `board-member` | The association's board | Planned: `accommodation-read`, `accommodation-ownership-review`, `accommodation-maintenance-read`, `accommodation-board-read` |
 | `accommodation-manager` | Whoever the board grants permissions to: a management company, the reviewer, the maintenance provider | Only what the site's policy gives it; the board decides |
 | Residents | Owners and occupants with an account | Planned: `accommodation-self` |
 
