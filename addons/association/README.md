@@ -67,62 +67,82 @@ It replaces The Fairways' Google form "Contact information".
   `ResidencyManager.checkEntry`). A blank last date is `current`.
 - It records `occupancy-submit` before it keeps anything (on-failure `refuse`): who sent it, the unit,
   the entry type and the names of the questions answered, never the answers.
-- It keeps the submission in the add-on's encrypted database as pending, and tells the holders of
-  `association-review` (admins on day one; a site grants it to its board in its own policy) that one
-  waits. The notice names the unit and the entry type, not the person. With nobody holding the
-  permission, it logs only.
+- It keeps the submission in the add-on's encrypted database as pending, and files it with core's
+  reviews ([ngdpbase#2112](https://github.com/jwilleke/ngdpbase/issues/2112)), as the person who sent
+  it: an `association.occupancy` request decided by the holders of `association-review` (admins and
+  core's `executive` role as shipped). Core tells them, with a notice that names only the kind, and
+  lists it on `/reviews` and the Executive Hub. The request carries the answers, labelled as the form
+  asks them, and what approval will do. If core cannot keep requests on the site, the sender is told
+  and nothing is kept.
 
 ## Review
 
-__Admin → Occupancy review__ (`/addons/association/review`, also a card on `/admin`) lists the submissions
-waiting, with their answers ([#33](https://github.com/jwilleke/ngdpbase-addons/issues/33)). It needs
-`association-review`, which `OccupancyManager` asks again with the reviewer's context.
+Every submission is decided through its core review request
+([ngdpbase#2112](https://github.com/jwilleke/ngdpbase/issues/2112)), on any of three pages, with the
+same outcome: `/reviews`, the Executive Hub (`/executive`), or __Admin → Occupancy review__
+(`/addons/association/review`, also a card on `/admin`), which lists the submissions waiting with
+their answers ([#33](https://github.com/jwilleke/ngdpbase-addons/issues/33)) and decides through
+`host.reviews.decide`. Each page asks `association-review`; `OccupancyManager` asks it again with the
+decider's context, and core asks it again and records the decision (`review-approved`,
+`review-rejected`, `review-failed`).
 
-- __Reject:__ nothing is applied. Recorded as `occupancy-reject` first.
-- __Approve__ applies a submission for the person with its email, in this order:
-  - Check everything first. The account with the email is found through `UserManager.searchUsers`
-    with the reviewer's context; more than one is never guessed. With none, the reviewer gives a
-    username for a new one ([#34](https://github.com/jwilleke/ngdpbase-addons/issues/34)).
-    Accommodation must accept the entry, and an owner's share must be given (default 100 on the page).
-  - Record `occupancy-approve` (on-failure `refuse`).
+- __Reject:__ nothing is applied. Core records it. A submission rejected on `/reviews` or the hub is
+  marked rejected on association's own page the next time it lists.
+- __Approve:__ core runs association's handler (`OccupancyManager.applyReview`), which applies the
+  submission __as the system__, with a reason naming the submission, the request and the decider
+  (`association: occupancy form <id> (review <id>) approved by <user>`), the way accommodation's
+  owner-change requests are applied. The decider needs `association-review` and nothing that writes.
+  In this order:
+  - Check everything first. The account with the email is found through `UserManager.searchUsers`;
+    more than one is never guessed. With none, a new one gets a username from the name (`first.last`,
+    else the email's local part), with a short suffix from the request's id when that is taken
+    ([#34](https://github.com/jwilleke/ngdpbase-addons/issues/34)). Accommodation must accept the
+    entry. An owner's share is 100%, as the request says; a different split is set on the unit's page
+    afterwards, where accommodation's share check shows it.
+  - Record `occupancy-approve` (on-failure `refuse`), as the system, with `decidedBy` and `reviewId`.
   - For someone with no account: make it with no password (`UserManager.createUser`) and invite them
-    (`AuthManager.inviteUser`), both as the reviewer, so they choose their own password or passkey. Core
-    records both. An invitation that could not be sent (email off, say) is shown to the reviewer, and
-    the approval still completes; an administrator can resend it from User Management. If a later
-    step fails, the account stays, and approving again finds it.
-  - Add the ownership or occupies entry through accommodation's `changeLink`, which also asks
-    `accommodation-manage`. A reviewer needs both permissions; association does not grant
-    `accommodation-manage`.
-  - Write the details to the person's identity record through `IdentityManager.update`
-    (`identity-manage`), in accommodation's own mapping (`ResidencyManager.contactDetails`). The home address goes in `address`. Every other address and phone, the agent
-    and the emergency contact go in `contactPoint`, each typed by `contactType` (`mailing`, `home`,
-    `other`, `business`, `agent`, `emergency`). Kinds the form does not write are kept.
-  - Mark the submission approved.
-- If the details cannot be written, the entry is removed again, the submission stays pending, and the
-  failure is recorded. If that removal fails too, the error says the entry is still in effect.
-- association's review policy grants admins `identity-read`, `identity-manage`, `search-user` and
-  `user-create` with
-  `association-review`.
+    (`AuthManager.inviteUser`), so they choose their own password or passkey. Core records both. An
+    invitation that could not be sent (email off, say) is in the outcome, and the approval still
+    completes; an administrator can resend it from User Management. If a later step fails, the
+    account stays, and approving again finds it.
+  - Add the ownership or occupies entry through accommodation's `changeLink`.
+  - Write the details to the account's identity record through `IdentityManager.update`, in
+    accommodation's own mapping (`ResidencyManager.contactDetails`). The home address goes in
+    `address`. Every other address and phone, the agent and the emergency contact go in
+    `contactPoint`, each typed by `contactType` (`mailing`, `home`, `other`, `business`, `agent`,
+    `emergency`). Kinds the form does not write are kept.
+  - Mark the submission approved. Core keeps a line saying what was done as the request's outcome.
+- Not done, nothing half-done: the handler throws, and core keeps the request open with the reason,
+  shown to the decider; approving again retries. If the details cannot be written, the entry is
+  removed again first; if that removal fails too, the reason says the entry is still in effect.
+- A refusal is a plain 403 on every page, never a 500. On association's page only the outcome code
+  and the submission's id go in the URL; the page reads what was done, or why not, from core.
+- __Submissions kept before reviews__ are filed at start-up, once each, under the system context, and
+  then decided like any other; one not filed yet (core could not keep requests) is filed when the
+  review page next lists or decides it, and is counted on the hub card meanwhile.
+- association's review policy still grants admins `identity-read`, `identity-manage`, `search-user`
+  and `user-create` with `association-review`. Approval no longer uses the first two or `user-create`;
+  the page's account lookup uses `search-user`.
 - Not yet: applying a signed-in owner's or occupant's own-unit submission directly ([#35](https://github.com/jwilleke/ngdpbase-addons/issues/35)).
 - The details use core's own schema.org types (`ContactPointEntry`: a `ContactPoint` or a
-  `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.34.0 or later (IdentityManager, `identity-manage`, and `identityIdOf` and `convertReference` for identity `@id`s, below).
+  `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.34.0 or later (IdentityManager, `identity-manage`, core's reviews, and `identityIdOf` and `convertReference` for identity `@id`s, below).
 
 ## Executive Hub
 
 The board's page, core's `/executive` ([ngdpbase#2094](https://github.com/jwilleke/ngdpbase/issues/2094)):
 
-- __Grant.__ The policy `association-executive-access` gives core's `executive` role `association-review`: the board reads the occupancy submissions waiting and decides them. Approving one also writes an ownership or occupies entry (`accommodation-manage`) and the person's details (`identity-manage`), and may make an account (`user-create`); none of them is given to `executive`, which writes nothing. So, as shipped, the board can read and reject a submission, and an approval is refused at its first write with nothing changed. A site whose board approves grants those three in its own policy.
-- __Card.__ An __Occupancy review__ card (`surface: 'executive'`, gated by `association-review`, linking to `/addons/association/review`). Its `summary(ctx)` is `OccupancyManager.waitingCount(ctx)`: `association-review` asked again with the viewer's context, then one count of the submissions waiting.
+- __Grant.__ The policy `association-executive-access` gives core's `executive` role `association-review`: the board reads the occupancy submissions waiting and approves or rejects them, on the hub's list of requests, on `/reviews` or on the add-on's review page. An approval is applied by the system, naming the decider (Review, above), so the role needs nothing that writes.
+- __Card.__ An __Occupancy review__ card (`surface: 'executive'`, gated by `association-review`, linking to `/addons/association/review`). Its `summary(ctx)` is `OccupancyManager.waitingCount(ctx)`: `association-review` asked again with the viewer's context, then the open `association.occupancy` requests core lists for the viewer, plus any submission kept before reviews and not filed yet.
 - The card is registered only on a core with the hub (`AddonsManager.executiveCardsFor`). An older core keys cards by add-on alone, so the executive card would take the `/admin` card's place there.
 
 ## Who a record refers to
 
 From ngdpbase 5.34.0 ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041), step 7 of the identity model, [#2042](https://github.com/jwilleke/ngdpbase/issues/2042)) anything that refers to an identity stores its `@id`, never a username.
 
-- __Audit rows:__ `occupancy-approve` writes `metadata.owner` as the owner's identity `@id` and `metadata.ownerUser` as their username (`IdentityManager.identityIdOf`, which never throws for a store that is down). A new account has no `@id` when the record is written first, and an unanswered lookup is null: `owner` is then the username, and the approval still completes. Rows written before this keep `owner` as the username. `occupancy-submit` and `occupancy-reject` name no owner, only the acting user, as before.
+- __Audit rows:__ `occupancy-approve` writes `metadata.owner` as the owner's identity `@id` and `metadata.ownerUser` as their username (`IdentityManager.identityIdOf`, which never throws for a store that is down). A new account has no `@id` when the record is written first, and an unanswered lookup is null: `owner` is then the username, and the approval still completes. Rows written before this keep `owner` as the username. `occupancy-submit` names no owner, only the acting user, as before. Rows written before ngdpbase#2112 may be `occupancy-reject`; a rejection is now core's `review-rejected`.
 - __Submissions__ keep `submitted_by` as the submitter's identity `@id` (the forms add-on sends it; this add-on looks a bare username up itself if it is sent one). `anonymous`, `orphan:<name>` and a name with no account are stored as given. The name is kept beside it in `submitter_name` for the review page.
 - __Start-up conversion__, once, for submissions kept before this: each `submitted_by` that is still a username goes through `IdentityManager.convertReference` under the system context, one write per submission, and the name moves to `submitter_name`. A name with no account becomes `orphan:<name>`, so a later account with that name never becomes the submitter. `@id`s, orphans and `anonymous` are skipped, so a second start writes nothing. Counts only are logged. When the identity store cannot answer, the whole pass is postponed to the next start. Orphans and a postponed pass show in the add-on's status on Admin → Add-ons.
-- Nothing else is stored by user: reviewers are looked up from `association-review` at the time and told by notification, and the approver is the acting user of the audit row.
+- Nothing else is stored by user: core tells the holders of `association-review` at the time, and records who decided; `occupancy-approve` is the system's row, naming the decider in its reason and `decidedBy`.
 
 ## Develop
 

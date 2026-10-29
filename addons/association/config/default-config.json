@@ -16,7 +16,7 @@
       "audit": {
         "on-failure": "refuse",
         "enabled": true,
-        "description": "An occupancy submission approved or rejected; who, the unit and the entry type, never the answers"
+        "description": "An approved occupancy submission applied, as the system, naming the decider; the unit and the entry type, never the answers. Filing and deciding the review are recorded by core"
       }
     },
     "occupancy-submit": {
@@ -32,7 +32,7 @@
     {
       "id": "association-review-access",
       "name": "Association: review",
-      "description": "Admins review occupancy submissions on day one. Approving writes the person's details (identity-read, identity-manage), finds their account (search-user), and for someone with no account makes one and invites them (user-create); it also needs accommodation-manage, which accommodation's own policy grants. A site grants these to its board in its own policy.",
+      "description": "Admins decide occupancy submissions on day one, on core's Reviews page or the add-on's own. An approval is applied by the system, naming the decider, so deciding needs association-review alone (ngdpbase#2112); the review page finds each submission's account with search-user. identity-read, identity-manage and user-create date from when the reviewer applied an approval themselves; approval no longer uses them.",
       "priority": 90,
       "effect": "allow",
       "subjects": [
@@ -58,7 +58,7 @@
     {
       "id": "association-executive-access",
       "name": "Association: the Executive Hub",
-      "description": "The board, through core's executive role, reads the occupancy submissions waiting and decides them. Approving one also writes an entry and a person's details, which need accommodation-manage, identity-manage and user-create; the executive role holds none of them, so a site that wants its board to approve grants those in its own policy.",
+      "description": "The board, through core's executive role, reads the occupancy submissions waiting and decides them, on the Executive Hub, Reviews or the add-on's review page. An approval is applied by the system, naming the decider, so the role needs nothing that writes (ngdpbase#2112).",
       "priority": 90,
       "effect": "allow",
       "subjects": [
