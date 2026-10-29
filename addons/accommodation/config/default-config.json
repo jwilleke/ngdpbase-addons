@@ -129,7 +129,7 @@
     {
       "id": "accommodation-executive-access",
       "name": "Accommodation: the Executive Hub",
-      "description": "The board, through core's executive role, reads everything accommodation keeps (every unit, its owners, occupants and billing) and decides owners' requests to change a unit's owners. It changes nothing else: no accommodation-manage, and no notices.",
+      "description": "The board, through core's executive role, reads everything accommodation keeps (every unit, its owners, occupants and billing) decides owners' requests to change a unit's owners, and is told of owners' changes (accommodation-notices). It changes nothing else: no accommodation-manage.",
       "priority": 90,
       "effect": "allow",
       "subjects": [
@@ -147,7 +147,8 @@
       "actions": [
         "accommodation-read",
         "accommodation-billing-read",
-        "accommodation-ownership-review"
+        "accommodation-ownership-review",
+        "accommodation-notices"
       ]
     },
     {

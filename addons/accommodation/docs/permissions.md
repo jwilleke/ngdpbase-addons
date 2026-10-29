@@ -23,7 +23,7 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 | [`accommodation-billing-read`](#accommodation-billing-read) | Built | admin, executive; accounting's policy grants its invoice job |
 | [`accommodation-units-list`](#accommodation-units-list) | Built ([#32](https://github.com/jwilleke/ngdpbase-addons/issues/32)) | every visitor and every user |
 | [`accommodation-manage`](#accommodation-manage) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
-| [`accommodation-notices`](#accommodation-notices) | Built ([#38](https://github.com/jwilleke/ngdpbase-addons/issues/38)) | admin |
+| [`accommodation-notices`](#accommodation-notices) | Built ([#38](https://github.com/jwilleke/ngdpbase-addons/issues/38)) | admin, executive |
 | [`accommodation-self`](#accommodation-self) | Seeing your own units built ([#36](https://github.com/jwilleke/ngdpbase-addons/issues/36)); changes planned ([#16](https://github.com/jwilleke/ngdpbase-addons/issues/16)) | every user, through `vault-owner` |
 | [`accommodation-ownership-review`](#accommodation-ownership-review) | Built ([#40](https://github.com/jwilleke/ngdpbase-addons/issues/40)) | admin, executive |
 | [`accommodation-maintenance-read`](#accommodation-maintenance-read) | Proposed | board |
@@ -88,8 +88,11 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 - __Lets a person:__ be told of residents' changes the board should know about: an owner's billing
   address now, and changes to occupants later.
 - __Does not:__ let them see or change anything.
-- __Granted:__ to admins in accommodation's own policy; a site grants it to its board. When
-  `governance` exists, it can grant it to its board roles (settled with ngdpbase core, 2026-10-25).
+- __Granted:__ to admins and to core's `executive` role in accommodation's own policies, so board
+  members are told of owners' changes (operator, 2026-10-29,
+  [ngdpbase#2094](https://github.com/jwilleke/ngdpbase/issues/2094)). A site may grant it to another
+  role in its own policy; when `governance` exists, it can grant it to its board roles (settled with
+  ngdpbase core, 2026-10-25).
 - __Used:__ notices go to `PolicyDecisionPoint.usersHolding('accommodation-notices')`; with nobody
   holding it, the add-on logs only.
 
@@ -158,7 +161,7 @@ nothing until a policy grants it permissions.
 | Role | Who | Holds |
 | --- | --- | --- |
 | `admin` (core) | Site administrators | Every accommodation permission, on day one |
-| `executive` (core) | The board, on the Executive Hub (`/executive`) | `accommodation-read`, `accommodation-billing-read`, `accommodation-ownership-review`, in the policy `accommodation-executive-access`. Nothing that changes a unit, and not `accommodation-notices` |
+| `executive` (core) | The board, on the Executive Hub (`/executive`) | `accommodation-read`, `accommodation-billing-read`, `accommodation-ownership-review`, `accommodation-notices`, in the policy `accommodation-executive-access`. Nothing that changes a unit |
 | `board-member` | The association's board | Planned: `accommodation-read`, `accommodation-ownership-review`, `accommodation-maintenance-read`, `accommodation-board-read` |
 | `accommodation-manager` | Whoever the board grants permissions to: a management company, the reviewer, the maintenance provider | Only what the site's policy gives it; the board decides |
 | Residents | Owners and occupants with an account | Planned: `accommodation-self` |

@@ -46,14 +46,14 @@ describe('the executive role in accommodation\'s policy', () => {
   const policies = defaults['ngdpbase.access.policies'] as Array<{ id: string; subjects: Array<{ type: string; value: string }>; actions: string[] }>;
   const forExecutive = policies.filter(p => p.subjects.some(s => s.type === 'role' && s.value === 'executive'));
 
-  test('reads everything accommodation keeps and decides owner-change requests, nothing more', () => {
+  test('reads everything accommodation keeps, decides owner-change requests and is told of owners\' changes, nothing more', () => {
     expect(forExecutive.map(p => p.id)).toEqual(['accommodation-executive-access']);
-    expect(forExecutive[0].actions).toEqual(['accommodation-read', 'accommodation-billing-read', 'accommodation-ownership-review']);
+    expect(forExecutive[0].actions).toEqual(['accommodation-read', 'accommodation-billing-read', 'accommodation-ownership-review', 'accommodation-notices']);
   });
 
   test('is given no permission that changes anything', () => {
     const granted = forExecutive.flatMap(p => p.actions);
-    for (const write of ['accommodation-manage', 'accommodation-notices', 'accommodation-self']) expect(granted).not.toContain(write);
+    for (const write of ['accommodation-manage', 'accommodation-self']) expect(granted).not.toContain(write);
   });
 
   test('every permission it is given is one accommodation declares', () => {
