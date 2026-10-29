@@ -66,7 +66,14 @@ interface PolicyDecisionPointLike {
   usersHolding(action: string): Promise<string[] | null>;
 }
 interface AddonsManagerLike {
-  registerDashboardCard(card: { addonName: string; title: string; icon: string; adminUrl: string }): void;
+  registerDashboardCard(card: {
+    addonName: string; title: string; icon: string; adminUrl: string;
+    /** ngdpbase#2093: an Executive Hub card, shown to a viewer the PDP permits `permission`. */
+    surface?: 'admin' | 'executive'; permission?: string;
+    summary?: (ctx: ActorContext) => Promise<{ figures: Array<{ label: string; value: number | string }>; message?: string }>;
+  }): void;
+  /** Present on a core with the Executive Hub (ngdpbase#2093). */
+  executiveCardsFor?: unknown;
 }
 interface NotificationManagerLike {
   addNotification(n: { type: 'system'; level: 'info'; title: string; message: string; targetUsers: string[] }): Promise<string>;
@@ -188,9 +195,20 @@ const AssociationAddon = {
     const views = engine.app?.get?.('views') as string | string[] | undefined;
     engine.app?.set?.('views', [...[views ?? []].flat(), path.join(path.dirname(fileURLToPath(import.meta.url)), 'views')]);
     engine.app?.use('/addons/association', reviewRoutes(engine, host));
-    engine.getManager<AddonsManagerLike>('AddonsManager')?.registerDashboardCard({
+    const addons = engine.getManager<AddonsManagerLike>('AddonsManager');
+    addons?.registerDashboardCard({
       addonName: 'association', title: 'Occupancy review', icon: 'fas fa-clipboard-check', adminUrl: '/addons/association/review'
     });
+    // The board's card on the Executive Hub (ngdpbase#2094): the forms waiting, counted for the viewer.
+    // Only on a core that has the hub: an older one keys cards by add-on alone, so this would replace the /admin one.
+    if (addons && typeof addons.executiveCardsFor === 'function') {
+      const manager = occupancy;
+      addons.registerDashboardCard({
+        addonName: 'association', title: 'Occupancy review', icon: 'fas fa-clipboard-check', adminUrl: '/addons/association/review',
+        surface: 'executive', permission: 'association-review',
+        summary: async (ctx) => ({ figures: [{ label: 'Occupancy forms waiting', value: await manager.waitingCount(ctx) }] })
+      });
+    }
     logger.info(`[association] Ready, on ${accommodations.count()} accommodation(s)`);
   },
 

@@ -1,7 +1,7 @@
 ---
 title: Accommodation permissions and roles
 description: What each accommodation permission lets a person do, what it does not, where it is checked and recorded, and which roles hold it. The source of truth for their meaning.
-last_updated: "2026-10-23"
+last_updated: "2026-10-29"
 ---
 
 # Accommodation permissions and roles
@@ -19,13 +19,13 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 
 | Permission | Status | Day one |
 | --- | --- | --- |
-| [`accommodation-read`](#accommodation-read) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
-| [`accommodation-billing-read`](#accommodation-billing-read) | Built | admin; a site grants accounting's invoice job |
+| [`accommodation-read`](#accommodation-read) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin, executive |
+| [`accommodation-billing-read`](#accommodation-billing-read) | Built | admin, executive; accounting's policy grants its invoice job |
 | [`accommodation-units-list`](#accommodation-units-list) | Built ([#32](https://github.com/jwilleke/ngdpbase-addons/issues/32)) | every visitor and every user |
 | [`accommodation-manage`](#accommodation-manage) | Built ([#5](https://github.com/jwilleke/ngdpbase-addons/issues/5)) | admin |
 | [`accommodation-notices`](#accommodation-notices) | Built ([#38](https://github.com/jwilleke/ngdpbase-addons/issues/38)) | admin |
 | [`accommodation-self`](#accommodation-self) | Seeing your own units built ([#36](https://github.com/jwilleke/ngdpbase-addons/issues/36)); changes planned ([#16](https://github.com/jwilleke/ngdpbase-addons/issues/16)) | every user, through `vault-owner` |
-| [`accommodation-ownership-review`](#accommodation-ownership-review) | Built ([#40](https://github.com/jwilleke/ngdpbase-addons/issues/40)) | admin; a site grants its Board |
+| [`accommodation-ownership-review`](#accommodation-ownership-review) | Built ([#40](https://github.com/jwilleke/ngdpbase-addons/issues/40)) | admin, executive |
 | [`accommodation-maintenance-read`](#accommodation-maintenance-read) | Proposed | board |
 | [`accommodation-board-read`](#accommodation-board-read) | Proposed | board |
 
@@ -37,7 +37,10 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 - __Implies:__ access to personal data (names, addresses, phones, emergency contacts) for every unit.
   Grant it only to people the association trusts with the whole roster: the board, a management
   company.
-- __Checked:__ where a person asks: the add-on's routes and its plugin.
+- __Checked:__ where a person asks: the add-on's routes and its plugin, and the Executive Hub card's
+  figures, which core shows only to a holder and the card asks again with the viewer's context.
+- __Granted:__ to admins, and to core's `executive` role (the board: nothing the organization keeps is
+  hidden from it, operator 2026-10-26), in accommodation's own policies ([ngdpbase#2094](https://github.com/jwilleke/ngdpbase/issues/2094)).
 - __Recorded:__ not yet. Reads are not audited today.
 
 ### accommodation-billing-read
@@ -49,8 +52,8 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
 - __Checked:__ by `ResidencyManager.billing` with the caller's context. Only then are the owners read,
   under the system context with a reason naming the caller and unit, and only billing fields are
   returned, so the caller needs no `search-user` (asked by ngdpbase core for accounting, 2026-10-25).
-- __Granted:__ to admins in accommodation's own policy. accounting's policy grants it to its job
-  `accounting-dues.issue-invoices`, a job subject.
+- __Granted:__ to admins and to core's `executive` role in accommodation's own policies ([ngdpbase#2094](https://github.com/jwilleke/ngdpbase/issues/2094)).
+  accounting's policy grants it to its job `accounting-dues.issue-invoices`, a job subject.
 
 ### accommodation-units-list
 
@@ -125,9 +128,9 @@ holds what in its own `app-custom-config.json`, without touching the add-on.
   for deciding Board reviews). Core checks it when the request is decided. The add-on's review handler
   (`accommodation.ownership-change`) then does the work, new accounts included, under the system
   context, with a reason naming the request and the decider.
-- __Granted:__ to admins in accommodation's own policy; a site grants it to its Board in its own
-  policy, and core's Executive Hub to `executive`
-  ([ngdpbase#2092](https://github.com/jwilleke/ngdpbase/issues/2092)).
+- __Granted:__ to admins and to core's `executive` role in accommodation's own policies, so the
+  board decides owners' requests from the Executive Hub ([ngdpbase#2094](https://github.com/jwilleke/ngdpbase/issues/2094)). A site may grant it to another
+  role in its own policy.
 - __Recorded:__ core records the request and the decision (`review-filed`, `review-approved`,
   `review-rejected`); each entry the approval writes is recorded as `accommodation-manage` by the
   system, its reason naming the request and the decider.
@@ -155,6 +158,7 @@ nothing until a policy grants it permissions.
 | Role | Who | Holds |
 | --- | --- | --- |
 | `admin` (core) | Site administrators | Every accommodation permission, on day one |
+| `executive` (core) | The board, on the Executive Hub (`/executive`) | `accommodation-read`, `accommodation-billing-read`, `accommodation-ownership-review`, in the policy `accommodation-executive-access`. Nothing that changes a unit, and not `accommodation-notices` |
 | `board-member` | The association's board | Planned: `accommodation-read`, `accommodation-ownership-review`, `accommodation-maintenance-read`, `accommodation-board-read` |
 | `accommodation-manager` | Whoever the board grants permissions to: a management company, the reviewer, the maintenance provider | Only what the site's policy gives it; the board decides |
 | Residents | Owners and occupants with an account | Planned: `accommodation-self` |

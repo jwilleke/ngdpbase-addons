@@ -85,6 +85,8 @@ Each accommodation is named by its street address with the parcel after it, "13 
 (66-09960.017)", and the list is sorted by street, then house number. Accommodations with no usable
 billing address are counted at the top and marked, so they are fixed before a dues run. An
 accommodation's page shows the county's record, its billing, and its owners and occupants.
+Holders of core's `executive` role read it too, and the add-on's card on the Executive Hub
+(`/executive`, [ngdpbase#2094](https://github.com/jwilleke/ngdpbase/issues/2094)) links to it.
 Open an accommodation to change its entries, which needs `accommodation-manage`:
 
 - __Add a person__: one Name box, owner or occupant, from, and an owner's share. For example "Pat
@@ -331,6 +333,14 @@ charge as its own invoice line, and the treasurer confirms it. The Fairways', as
 
 A rule has an `amount`, an `annual-percent`, or both. A malformed rule stops the add-on loading and
 names the key.
+
+## Executive Hub
+
+The board's page, core's `/executive` ([ngdpbase#2094](https://github.com/jwilleke/ngdpbase/issues/2094); design in ngdpbase's `docs/planning/executive-hub.md`):
+
+- __Grants.__ The policy `accommodation-executive-access` gives core's `executive` role `accommodation-read` and `accommodation-billing-read` (the board reads everything the organization keeps) and `accommodation-ownership-review` (it decides owners' requests to change the owners, listed on the hub from core's reviews). Nothing that changes a unit, and not `accommodation-notices`. An owner's own page (`accommodation-self`) is theirs, as for every user.
+- __Card.__ An __Owners and occupants__ card (`surface: 'executive'`, gated by `accommodation-read`, linking to `/addons/accommodation/residents`). Its `summary(ctx)` (`managers/executiveCard.ts`) asks `accommodation-read` again with the viewer's context, then counts: owner-change requests waiting that the viewer may decide (`host.reviews.listOpen(ctx)`, kind `accommodation.ownership-change`), units with no current owner (`withoutOwner(ctx, ids)`, as the residents page reads it) and units with no usable billing address (`withoutBilling(ids)`). Each is a figure the add-on already keeps, worked out in memory on each visit to the hub, uncached.
+- The card is registered only on a core with the hub (`AddonsManager.executiveCardsFor`). An older core keys cards by add-on alone, so the executive card would take the `/admin` card's place there.
 
 ## Permissions and audit
 

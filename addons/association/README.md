@@ -107,6 +107,14 @@ waiting, with their answers ([#33](https://github.com/jwilleke/ngdpbase-addons/i
 - The details use core's own schema.org types (`ContactPointEntry`: a `ContactPoint` or a
   `PostalAddress`, each with `name`), so the add-on needs ngdpbase 5.34.0 or later (IdentityManager, `identity-manage`, and `identityIdOf` and `convertReference` for identity `@id`s, below).
 
+## Executive Hub
+
+The board's page, core's `/executive` ([ngdpbase#2094](https://github.com/jwilleke/ngdpbase/issues/2094)):
+
+- __Grant.__ The policy `association-executive-access` gives core's `executive` role `association-review`: the board reads the occupancy submissions waiting and decides them. Approving one also writes an ownership or occupies entry (`accommodation-manage`) and the person's details (`identity-manage`), and may make an account (`user-create`); none of them is given to `executive`, which writes nothing. So, as shipped, the board can read and reject a submission, and an approval is refused at its first write with nothing changed. A site whose board approves grants those three in its own policy.
+- __Card.__ An __Occupancy review__ card (`surface: 'executive'`, gated by `association-review`, linking to `/addons/association/review`). Its `summary(ctx)` is `OccupancyManager.waitingCount(ctx)`: `association-review` asked again with the viewer's context, then one count of the submissions waiting.
+- The card is registered only on a core with the hub (`AddonsManager.executiveCardsFor`). An older core keys cards by add-on alone, so the executive card would take the `/admin` card's place there.
+
 ## Who a record refers to
 
 From ngdpbase 5.34.0 ([#2041](https://github.com/jwilleke/ngdpbase/issues/2041), step 7 of the identity model, [#2042](https://github.com/jwilleke/ngdpbase/issues/2042)) anything that refers to an identity stores its `@id`, never a username.

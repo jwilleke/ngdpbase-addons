@@ -54,6 +54,28 @@
         "search-user",
         "user-create"
       ]
+    },
+    {
+      "id": "association-executive-access",
+      "name": "Association: the Executive Hub",
+      "description": "The board, through core's executive role, reads the occupancy submissions waiting and decides them. Approving one also writes an entry and a person's details, which need accommodation-manage, identity-manage and user-create; the executive role holds none of them, so a site that wants its board to approve grants those in its own policy.",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "executive"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "association-review"
+      ]
     }
   ]
 }

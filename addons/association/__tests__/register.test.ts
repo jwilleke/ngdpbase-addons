@@ -81,6 +81,34 @@ describe('association register()', () => {
     (engine.opened[0] as { close(): void }).close();
   });
 
+  test('on a core with the Executive Hub, registers its card too: the forms waiting, gated by association-review and asked as the viewer', async () => {
+    const engine = fakeEngine({ seed: ['lee', 'pat'] });
+    (engine.managers.get('AddonsManager') as Record<string, unknown>).executiveCardsFor = async () => [];
+    const asked: unknown[] = [];
+    let permit = true;
+    engine.managers.set('PolicyDecisionPoint', { usersHolding: async () => [], decide: async (ctx: unknown, r: { action: string }) => { asked.push([ctx, r.action]); return { permit }; } });
+    await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
+    const cards = engine.cards as Array<{ surface?: string; permission?: string; adminUrl: string; summary?: (ctx: unknown) => Promise<unknown> }>;
+    expect(cards.map(c => c.surface ?? 'admin')).toEqual(['admin', 'executive']);
+    expect(cards[1]).toMatchObject({ permission: 'association-review', adminUrl: '/addons/association/review' });
+    const viewer = { username: 'board.chair', roles: ['executive'], isAuthenticated: true };
+    asked.length = 0;
+    expect(await cards[1].summary!(viewer)).toEqual({ figures: [{ label: 'Occupancy forms waiting', value: 2 }] });
+    expect(asked).toEqual([[viewer, 'association-review']]);
+    permit = false;
+    await expect(cards[1].summary!(viewer)).rejects.toThrow();
+    await AssociationAddon.shutdown();
+    (engine.opened[0] as { close(): void }).close();
+  });
+
+  test('the executive role is given association-review in association\'s own policy, and no permission that writes', () => {
+    const policies = defaults['ngdpbase.access.policies'] as Array<{ id: string; subjects: Array<{ type: string; value: string }>; actions: string[] }>;
+    const forExecutive = policies.filter(p => p.subjects.some(s => s.type === 'role' && s.value === 'executive'));
+    expect(forExecutive.map(p => [p.id, p.actions])).toEqual([['association-executive-access', ['association-review']]]);
+    // approving also writes through these; the executive role is given none of them here
+    for (const write of ['identity-manage', 'user-create', 'accommodation-manage']) expect(forExecutive.flatMap(p => p.actions)).not.toContain(write);
+  });
+
   test('without the site database it does not start, and says how to fix it', async () => {
     const engine = fakeEngine({ database: false });
     await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
