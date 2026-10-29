@@ -87,6 +87,33 @@ describe('accommodation register()', () => {
     expect(await AccommodationAddon.status()).toMatchObject({ healthy: false });
   });
 
+  test('on a core with the Executive Hub, registers its card too, gated by accommodation-read and read as the viewer', async () => {
+    const engine = fakeEngine();
+    const addons = engine.managers.get('AddonsManager') as Record<string, unknown>;
+    addons.executiveCardsFor = async () => [];
+    engine.managers.set('PolicyDecisionPoint', { decide: async () => ({ permit: true }), usersHolding: async () => [] });
+    const asked: unknown[] = [];
+    engine.managers.set('UserManager', { searchUsers: async (_q: string, _o: unknown, ctx: unknown) => { asked.push(ctx); return SAMPLE_USERS; } });
+    writeFileSync(path.join(dataPath, 'accommodations.json'), JSON.stringify(SAMPLE_ACCOMMODATIONS));
+    const host = { ...hostForTest(), reviews: { listOpen: async (ctx: unknown) => { asked.push(ctx); return [{ kind: 'accommodation.ownership-change' }]; } } };
+    await AccommodationAddon.register(engine, { dataPath }, host as never);
+    const cards = engine.cards as Array<{ surface?: string; permission?: string; adminUrl: string; summary?: (ctx: unknown) => Promise<unknown> }>;
+    expect(cards.map(c => c.surface ?? 'admin')).toEqual(['admin', 'executive']);
+    expect(cards[1]).toMatchObject({ permission: 'accommodation-read', adminUrl: '/addons/accommodation/residents' });
+    asked.length = 0;
+    const viewer = { username: 'board.chair', roles: ['executive'], isAuthenticated: true };
+    expect(await cards[1].summary!(viewer)).toEqual({
+      figures: [
+        { label: 'Owner-change requests waiting', value: 1 },
+        { label: 'Units with no current owner', value: 1 },
+        { label: 'Units with no usable billing address', value: 2 }
+      ],
+      message: '3 unit(s)'
+    });
+    expect(asked).toEqual([viewer, viewer]);
+    await AccommodationAddon.shutdown();
+  });
+
   test('registers the daily roles job, which changes roles through RoleManager as the job runs', async () => {
     const engine = fakeEngine();
     const jobs: Array<{ id: string; schedule: string; run: (p: (m: string) => void, ctx: unknown) => Promise<{ success: boolean; summary?: string }> }> = [];

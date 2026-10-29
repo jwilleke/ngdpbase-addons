@@ -419,6 +419,15 @@ export default class OccupancyManager {
     if (!decision.permit) throw new OccupancyRefusedError('association-review', decision);
   }
 
+  /**
+   * How many submissions wait for review, for the viewer of the Executive Hub card (ngdpbase#2094).
+   * Needs association-review, asked with the viewer's context; a "no" throws. A count only.
+   */
+  async waitingCount(ctx: ActorContext): Promise<number> {
+    await this.authorize(ctx);
+    return this.pendingCount();
+  }
+
   /** How many submissions wait for review. */
   pendingCount(): number {
     const row = this.options.db.prepare(`SELECT COUNT(*) AS n FROM association_occupancy_submissions WHERE status = 'pending'`).get() as { n: number };

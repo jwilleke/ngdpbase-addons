@@ -8,7 +8,8 @@
  * plugin, mounts the API at /api/accommodation and the admin pages at /addons/accommodation
  * (who owns and lives in each accommodation, #28), sets the `accommodation` capability, and
  * registers the daily job `accommodation.roles`, which keeps the `owner` and `occupant`
- * roles in step with the dated ownership and occupancy entries (#23).
+ * roles in step with the dated ownership and occupancy entries (#23). Its card on core's
+ * Executive Hub gives the board its figures (ngdpbase#2094; managers/executiveCard.ts).
  *
  * Configuration keys:
  *   ngdpbase.addons.accommodation.enabled  — true/false (defaults to false)
@@ -33,6 +34,7 @@ import { categoriesFrom } from './managers/categories.js';
 import { lateChargesFrom } from './managers/lateCharges.js';
 import { chargeLinesFrom } from './managers/chargeLines.js';
 import AccommodationPlugin from './plugins/AccommodationPlugin.js';
+import { executiveCardSummary, type ExecutiveCardSummary } from './managers/executiveCard.js';
 
 interface PluginManagerLike { registerPlugin(name: string, plugin: unknown): Promise<void> }
 interface ConfigurationManagerLike { resolveDataPath(p: string): string }
@@ -71,7 +73,13 @@ interface IdentityManagerLike {
   update(ctx: ActorContext, id: string, patch: Record<string, unknown>): Promise<unknown>;
 }
 interface AddonsManagerLike {
-  registerDashboardCard(card: { addonName: string; title: string; icon: string; adminUrl: string }): void;
+  registerDashboardCard(card: {
+    addonName: string; title: string; icon: string; adminUrl: string;
+    /** ngdpbase#2093: an Executive Hub card, shown to a viewer the PDP permits `permission`. */
+    surface?: 'admin' | 'executive'; permission?: string; summary?: (ctx: ActorContext) => Promise<ExecutiveCardSummary>;
+  }): void;
+  /** Present on a core with the Executive Hub (ngdpbase#2093). */
+  executiveCardsFor?: unknown;
 }
 
 interface Engine {
@@ -258,9 +266,26 @@ const AccommodationAddon = {
     const views = engine.app?.get?.('views') as string | string[] | undefined;
     engine.app?.set?.('views', [...[views ?? []].flat(), path.join(path.dirname(fileURLToPath(import.meta.url)), 'views')]);
     engine.app?.use('/addons/accommodation', adminRoutes(engine, host));
-    engine.getManager<AddonsManagerLike>('AddonsManager')?.registerDashboardCard({
+    const addons = engine.getManager<AddonsManagerLike>('AddonsManager');
+    addons?.registerDashboardCard({
       addonName: 'accommodation', title: 'Owners and occupants', icon: 'fas fa-house-user', adminUrl: '/addons/accommodation/residents'
     });
+    // The board's card on the Executive Hub (ngdpbase#2094), read as the viewer. Only on a core that
+    // has the hub: an older one keys cards by add-on alone, so this card would replace the /admin one.
+    if (addons && typeof addons.executiveCardsFor === 'function') {
+      const reviews = host.reviews;
+      addons.registerDashboardCard({
+        addonName: 'accommodation', title: 'Owners and occupants', icon: 'fas fa-house-user', adminUrl: '/addons/accommodation/residents',
+        surface: 'executive', permission: 'accommodation-read',
+        summary: executiveCardSummary({
+          decide,
+          unitIds: () => accommodationManager.list().map(a => a.id),
+          withoutOwner: (ctx, ids) => reviewed.withoutOwner(ctx, ids),
+          withoutBilling: (ids) => reviewed.withoutBilling(ids),
+          openRequests: (ctx) => reviews.listOpen(ctx)
+        })
+      });
+    }
     engine.setCapability('accommodation', true);
   },
 
