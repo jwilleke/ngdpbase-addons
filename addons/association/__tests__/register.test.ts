@@ -7,9 +7,22 @@ import { describe, expect, test } from 'vitest';
 import { buildAddonHost, openAddonTestDatabase } from '@jwilleke/ngdpbase-types/testing';
 import AssociationAddon from '../index.js';
 import { OCCUPANCY_FORM_ID } from '../forms/occupancyForm.js';
+import { fakeReviews, type FakeReviews } from './fakeReviews.js';
 
 const defaults = JSON.parse(readFileSync(new URL('../config/default-config.json', import.meta.url), 'utf8')) as Record<string, unknown>;
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { ngdpbase: { slug: string; aboutPage: string } };
+
+/**
+ * The test kit's host with a stand-in for core's reviews: a host built with no site has no
+ * ReviewManager. The handler association registers is what the stand-in runs on approval.
+ */
+const registered: string[] = [];
+function hostForTest(reviews: FakeReviews = fakeReviews(() => true)) {
+  return {
+    ...buildAddonHost('association', defaults), reviews,
+    registerReviewHandler: (id: string, handler: Parameters<FakeReviews['handle']>[0]) => { registered.push(id); reviews.handle(handler); }
+  };
+}
 
 /** Accommodation's managers, a database and, unless `forms` is false, the forms add-on. */
 function fakeEngine(options: { database?: boolean; forms?: boolean; seed?: string[]; identities?: Record<string, unknown> } = {}) {
@@ -62,7 +75,7 @@ describe('association register()', () => {
 
   test('opens its database, ships the form as the system principal, and its handler keeps a submission as the sender', async () => {
     const engine = fakeEngine();
-    await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
+    await AssociationAddon.register(engine, {}, hostForTest());
     expect(engine.managers.get('OccupancyManager')).toBeDefined();
     expect(engine.mounts).toEqual(['/addons/association']);
     expect((engine.settings.views as string[])[0]).toBe('/core/views');
@@ -87,7 +100,7 @@ describe('association register()', () => {
     const asked: unknown[] = [];
     let permit = true;
     engine.managers.set('PolicyDecisionPoint', { usersHolding: async () => [], decide: async (ctx: unknown, r: { action: string }) => { asked.push([ctx, r.action]); return { permit }; } });
-    await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
+    await AssociationAddon.register(engine, {}, hostForTest());
     const cards = engine.cards as Array<{ surface?: string; permission?: string; adminUrl: string; summary?: (ctx: unknown) => Promise<unknown> }>;
     expect(cards.map(c => c.surface ?? 'admin')).toEqual(['admin', 'executive']);
     expect(cards[1]).toMatchObject({ permission: 'association-review', adminUrl: '/addons/association/review' });
@@ -111,7 +124,7 @@ describe('association register()', () => {
 
   test('without the site database it does not start, and says how to fix it', async () => {
     const engine = fakeEngine({ database: false });
-    await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
+    await AssociationAddon.register(engine, {}, hostForTest());
     expect(engine.shipped).toEqual([]);
     expect(await AssociationAddon.status()).toMatchObject({ healthy: false, message: expect.stringContaining("ngdpbase.database.provider to 'sqlite'") });
     await AssociationAddon.shutdown();
@@ -119,7 +132,7 @@ describe('association register()', () => {
 
   test('without the forms add-on it still loads, and offers no form', async () => {
     const engine = fakeEngine({ forms: false });
-    await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
+    await AssociationAddon.register(engine, {}, hostForTest());
     expect(await AssociationAddon.status()).toMatchObject({ healthy: true });
     await AssociationAddon.shutdown();
     (engine.opened[0] as { close(): void }).close();
@@ -132,7 +145,7 @@ describe('association register()', () => {
       convertReference: async (_c: unknown, stored: string) => stored === 'lee' ? { value: 'urn:uuid:lee', outcome: 'converted' } : { value: `orphan:${stored}`, outcome: 'orphaned' }
     };
     const engine = fakeEngine({ seed: ['lee', 'gone'], identities });
-    await AssociationAddon.register(engine, {}, buildAddonHost('association', defaults));
+    await AssociationAddon.register(engine, {}, hostForTest());
     const db = engine.opened[0] as { prepare(sql: string): { all(): unknown[] }; close(): void };
     expect(db.prepare('SELECT submitted_by, submitter_name FROM association_occupancy_submissions ORDER BY id').all())
       .toEqual([{ submitted_by: 'orphan:gone', submitter_name: 'gone' }, { submitted_by: 'urn:uuid:lee', submitter_name: 'lee' }]);
@@ -141,7 +154,7 @@ describe('association register()', () => {
     db.close();
 
     const down = fakeEngine({ seed: ['lee'], identities: { ...identities, canAnswer: () => false } });
-    await AssociationAddon.register(down, {}, buildAddonHost('association', defaults));
+    await AssociationAddon.register(down, {}, hostForTest());
     expect(await AssociationAddon.status()).toMatchObject({ healthy: true, message: expect.stringContaining('conversion postponed to the next start') });
     await AssociationAddon.shutdown();
     (down.opened[0] as { close(): void }).close();
@@ -150,7 +163,7 @@ describe('association register()', () => {
   test('does not load without accommodation', async () => {
     const engine = fakeEngine();
     engine.managers.delete('AccommodationManager');
-    await expect(AssociationAddon.register(engine, {}, buildAddonHost('association', defaults))).rejects.toThrow('enable the accommodation add-on');
+    await expect(AssociationAddon.register(engine, {}, hostForTest())).rejects.toThrow('enable the accommodation add-on');
   });
 
   test('the about page it names is the page it ships', () => {

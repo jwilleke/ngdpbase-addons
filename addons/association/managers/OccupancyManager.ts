@@ -4,23 +4,34 @@
  *
  * Every submission waits for review (17a): the handler checks the answers, records
  * `occupancy-submit` before it keeps anything (on-failure refuse), keeps the submission in
- * the add-on's encrypted database as pending, and tells the holders of `association-review`.
- * Nothing is applied to an account or an accommodation here.
+ * the add-on's encrypted database, and files it with core's reviews (ngdpbase#2112) as an
+ * `association.occupancy` request decided by the holders of `association-review`. Core tells
+ * them, lists it on /reviews and the Executive Hub, and records each decision. Nothing is
+ * applied to an account or an accommodation here.
  *
- * Review (#33): `pending` lists what waits, `reject` refuses one and `approve` applies one for
- * a person who has an account: their ownership or occupies entry (accommodation's changeLink,
- * which asks `accommodation-manage` itself) and their details on their identity record
- * (IdentityManager, `identity-manage`), in schema.org shape, by accommodation's own mapping
- * (ResidencyManager.contactDetails): the home address as `address`, every other address and phone
- * as a `contactPoint` typed by `contactType`. Each asks the decision
- * point for `association-review` with the reviewer's context (this manager is the
- * enforcement point for its submissions) and a "no" throws OccupancyRefusedError for
- * ApiContext.enforceDeny. A rejection is recorded before it is made (on-failure refuse).
+ * Approval (applyReview, core's handler for the request) applies the submission as the system,
+ * with a reason naming the request and the decider, the way accommodation's owner-change
+ * requests are applied: the decider needs `association-review` and nothing that writes. It adds
+ * the ownership or occupies entry (accommodation's changeLink), writes the details to the
+ * account's identity record (IdentityManager), in schema.org shape, by accommodation's own
+ * mapping (ResidencyManager.contactDetails), and makes and invites an account when none has the
+ * email. A rejection changes nothing. Association's own review page decides through the same
+ * request (`decide`), so the outcome is the same on every page.
  *
  * The entry's dates and unit are checked by accommodation's own rule
  * (ResidencyManager.checkEntry), the one that applies them later, never a copy of it.
  */
-import type { ActorContext, AddonHost, ContactPointEntry, Decision, PostalAddress } from '@jwilleke/ngdpbase-types';
+import type { ActorContext, AddonHost, AddonReviews, ContactPointEntry, Decision, PostalAddress, ReviewRequest } from '@jwilleke/ngdpbase-types';
+import { occupancyForm } from '../forms/occupancyForm.js';
+
+/** The kind and handler of an occupancy form's review request (ngdpbase#2112). */
+export const OCCUPANCY_REVIEW = 'association.occupancy';
+
+/** The share an owner's entry is given on approval; stated in the request, so the decider sees it. */
+const OWNER_SHARE = 100;
+
+/** core's review door, as far as this manager uses it (host.reviews). */
+export type OccupancyReviews = Pick<AddonReviews, 'fileRequest' | 'listOpen' | 'get' | 'decide'>;
 
 /** accommodation's mapping from the form's answers to identity-record fields (ResidencyManager.contactDetails). */
 export type ContactDetailsFrom = (answers: Record<string, unknown>) => { address?: PostalAddress; contactPoint: ContactPointEntry[] };
@@ -33,7 +44,7 @@ export class OccupancyRefusedError extends Error {
   }
 }
 
-/** A review refused for a reason the reviewer can act on: not found, or already decided. */
+/** A review refused for a reason the reviewer can act on: not found, already decided, or not appliable. */
 export class OccupancyReviewError extends Error {
   override readonly name = 'OccupancyReviewError';
 }
@@ -42,10 +53,12 @@ export class OccupancyReviewError extends Error {
 export interface EntryRef { type: 'owner' | 'occupant'; index: number; expected: string }
 export interface NewEntry { parcel: string; type: 'owner' | 'occupant'; from: string; to: string; share?: number }
 
-/** The doors approve goes through, each with the reviewer's context. */
+/** The doors approval goes through, each under the system context it is given (ngdpbase#2112). */
 export interface ApprovalDoors {
   /** UserManager.searchUsers(email, { limit: 2, activeOnly: false }, ctx). */
   searchUsers: (ctx: ActorContext, email: string) => Promise<Array<{ username: string; email?: string }>>;
+  /** Whether an account already has this username, ignoring case (UserManager.searchUsers, every match). */
+  usernameTaken: (ctx: ActorContext, username: string) => Promise<boolean>;
   /** ResidencyManager.changeLink: add, and remove for the undo. */
   addEntry: (ctx: ActorContext, username: string, entry: NewEntry) => Promise<EntryRef | undefined>;
   removeEntry: (ctx: ActorContext, username: string, at: EntryRef) => Promise<void>;
@@ -54,13 +67,13 @@ export interface ApprovalDoors {
   updatePerson: (ctx: ActorContext, id: string, patch: Record<string, unknown>) => Promise<unknown>;
   /** accommodation's ResidencyManager.contactDetails: the one mapping of the answers to identity-record fields. */
   contactDetails: ContactDetailsFrom;
-  /** UserManager.createUser with no password, as the reviewer (#34). */
+  /** UserManager.createUser with no password (#34). */
   createUser: (ctx: ActorContext, user: { username: string; email: string; displayName: string }) => Promise<{ username: string }>;
-  /** AuthManager.inviteUser, as the reviewer: 'sent', or why nothing was sent. */
+  /** AuthManager.inviteUser: 'sent', or why nothing was sent. */
   inviteUser: (ctx: ActorContext, username: string) => Promise<{ outcome: string; reason?: string }>;
 }
 
-/** What approve did: the account, and for a new one whether its invitation went out. */
+/** What approval did: the account, and for a new one whether its invitation went out. */
 export interface ApprovalResult { username: string; created: boolean; invitation?: { outcome: string; reason?: string } }
 
 /**
@@ -88,8 +101,10 @@ export interface PendingSubmission {
   unit: string;
   entryType: 'owner' | 'occupant';
   answers: Record<string, unknown>;
-  /** How many accounts have its email: approve needs exactly one, or none and a username for a new one. */
+  /** How many accounts have its email: approval needs exactly one, or none (a new one is made). */
   accounts?: 'none' | 'one' | 'several';
+  /** The share an owner's entry is given on approval. */
+  share?: number;
 }
 
 /** The slice of the SQLite handle this manager uses. */
@@ -127,8 +142,10 @@ export interface OccupancyAuditRecord {
 
 export interface OccupancyManagerOptions {
   db: OccupancyDb;
-  /** The doors approve goes through; absent, approve is refused. */
+  /** The doors approval goes through; absent, approval is refused. */
   approval?: ApprovalDoors;
+  /** core's reviews (host.reviews): every submission is filed and decided there (ngdpbase#2112). */
+  reviews?: OccupancyReviews;
   /** ngdpbase's decision point, with the caller's context as given. */
   decide: (ctx: ActorContext, request: { action: string }) => Promise<Decision>;
   /** ngdpbase's recordAuditEvent for this add-on; throws when a refuse event cannot be written. */
@@ -138,13 +155,22 @@ export interface OccupancyManagerOptions {
   checkEntry: (entry: { parcel: string; type: 'owner' | 'occupant'; from: string; to: string }) => string | null;
   /** The identity store (#2042): absent, a reference is kept as given. */
   identities?: IdentityDoors;
-  /** The context the submitter's @id and the start-up conversion are read under (the system principal). */
-  systemContext?: () => ActorContext;
-  /** Tell the holders of association-review that a submission waits. Must not throw. */
-  notifyReviewers: (title: string, message: string) => Promise<void>;
+  /** host.systemContext: the system principal, with the reason it acts (the identity lookups, filing, an approval). */
+  systemContext?: (reason: string) => ActorContext;
   now?: () => Date;
 }
 
+
+/** A username UserManager accepts. */
+const USERNAME = /^[a-z0-9][a-z0-9._-]{1,63}$/i;
+
+/** What an approval did, in a line for the decider: core keeps it as the request's outcome. */
+function summaryOf(result: ApprovalResult, entry: NewEntry, unit: string): string {
+  const what = `${entry.type === 'owner' ? `Owner (${entry.share}%)` : 'Occupant'} of unit ${unit} from ${entry.from}`;
+  if (!result.created) return `${what}: added for ${result.username}, and the details saved.`;
+  if (result.invitation?.outcome === 'sent') return `${what}: added for ${result.username}, a new account, invited by email; the details saved.`;
+  return `${what}: added for ${result.username}, a new account; the invitation was not sent (${result.invitation?.reason ?? result.invitation?.outcome ?? 'unknown'}): resend it from User Management.`;
+}
 
 /** A form answer as a trimmed string; anything else is empty. */
 function answer(data: Record<string, unknown>, name: string): string {
@@ -162,10 +188,12 @@ export default class OccupancyManager {
   }
 
   /**
-   * Keep one owner's submission for review, as the person who sent it (`ctx`, anonymous or not).
-   * Refused, with nothing kept: no answer to whether they are already an owner, no email, or
-   * an entry accommodation would refuse (an unknown unit, a bad date, a last date before the
-   * first). A blank last date is "current".
+   * Keep one owner's submission for review, as the person who sent it (`ctx`, anonymous or not),
+   * and file it with core's reviews in their name (ngdpbase#2112). Refused, with nothing kept: no
+   * answer to whether they are already an owner, no email, or an entry accommodation would refuse
+   * (an unknown unit, a bad date, a last date before the first). A blank last date is "current".
+   * A request that cannot be filed keeps nothing either: the row is removed again and the failure
+   * recorded; when core cannot keep requests on this site, the sender is told so.
    */
   async queue(ctx: ActorContext, submission: OccupancySubmission): Promise<OccupancyResult> {
     const { data } = submission;
@@ -177,6 +205,7 @@ export default class OccupancyManager {
     const entry = { parcel: unit, type, from: answer(data, 'from'), to: answer(data, 'to') || 'current' };
     const problem = this.options.checkEntry(entry);
     if (problem) return { ok: false, error: `Not accepted: ${problem}` };
+    if (!this.options.reviews) throw new Error('OccupancyManager was started without core\'s reviews');
 
     const answered = Object.keys(data).filter(k => answer(data, k) !== '').sort();
     // Who sent it, by identity @id (#2042): kept as given when it already is one, or has no account.
@@ -201,108 +230,209 @@ export default class OccupancyManager {
       await this.options.recordAudit(record('failure', err instanceof Error ? err.message : String(err))).catch(() => undefined);
       throw err;
     }
-    await this.options.notifyReviewers('Occupancy information waits for review',
-      `A submission for unit ${unit} (${type}) waits for review.`);
+    try {
+      await this.file(ctx, submission.id);
+    } catch (err) {
+      this.options.db.prepare(`DELETE FROM association_occupancy_submissions WHERE id = ?`).run(submission.id);
+      await this.options.recordAudit(record('failure', `not filed for review: ${err instanceof Error ? err.name : 'error'}`)).catch(() => undefined);
+      if ((err as Error)?.name === 'ReviewsUnavailableError') {
+        return { ok: false, error: 'The association cannot take submissions for review on this site right now; nothing was kept. Please try again later.' };
+      }
+      throw err;
+    }
     return { ok: true };
   }
 
-  /** Every submission waiting for review, oldest first. Needs association-review. */
+  /**
+   * File one kept submission with core's reviews, as `ctx` (its sender, or the system for one kept
+   * before reviews), and store the request's id on it. Core tells the holders of
+   * `association-review`. The request carries the answers, labelled as the form asks them, and
+   * what approval will do, so a decider on /reviews or the Executive Hub sees what they approve.
+   */
+  private async file(ctx: ActorContext, id: string): Promise<string> {
+    const reviews = this.reviews();
+    const row = this.options.db.prepare(`SELECT unit, entry_type, answers FROM association_occupancy_submissions WHERE id = ?`).get(id) as
+      { unit: string; entry_type: 'owner' | 'occupant'; answers: string } | undefined;
+    if (!row) throw new OccupancyReviewError(`no submission ${id}`);
+    const data = JSON.parse(row.answers) as Record<string, unknown>;
+    const name = [answer(data, 'firstName'), answer(data, 'lastName')].filter(Boolean).join(' ') || answer(data, 'email');
+    const to = answer(data, 'to');
+    const details: Record<string, string | number> = { Unit: row.unit, Entry: row.entry_type };
+    let section = '';
+    for (const field of occupancyForm.fields) {
+      if (field.type === 'section') { section = field.label; continue; }
+      const value = answer(data, field.name);
+      if (!value) continue;
+      // A label asked twice (Email, Phone) is told apart by its section.
+      const label = details[field.label] === undefined ? field.label : `${section}: ${field.label}`;
+      details[label] = value;
+    }
+    if (row.entry_type === 'owner') details['Share on approval'] = `${OWNER_SHARE}% (a different split is set on the unit's page afterwards)`;
+    details['On approval'] = 'Adds the entry for the account with this email and saves these details to its identity record; '
+      + 'with no such account, one is made with a username from the name and its owner is invited by email. Applied by the system, naming you.';
+    const filed = await reviews.fileRequest(ctx, {
+      kind: OCCUPANCY_REVIEW, handlerId: OCCUPANCY_REVIEW, decidePermission: 'association-review',
+      subject: `Occupancy information, unit ${row.unit}`,
+      summary: `${name}, ${row.entry_type} of unit ${row.unit} from ${answer(data, 'from')}${to ? ` to ${to}` : ''}`,
+      details
+    });
+    this.options.db.prepare(`UPDATE association_occupancy_submissions SET review_id = ? WHERE id = ?`).run(filed.id, id);
+    return filed.id;
+  }
+
+  /**
+   * File every pending submission kept before reviews (ngdpbase#2112), once, under the system
+   * context: at start-up, and again before the review page lists. Counts only. When core cannot
+   * keep requests, the rest wait for the next try.
+   */
+  async fileWaiting(): Promise<{ filed: number; postponed: boolean }> {
+    if (!this.options.reviews) return { filed: 0, postponed: false };
+    const rows = this.options.db.prepare(`SELECT id FROM association_occupancy_submissions WHERE status = 'pending' AND review_id IS NULL ORDER BY received_at, id`).all() as Array<{ id: string }>;
+    let filed = 0;
+    for (const r of rows) {
+      try {
+        await this.file(this.system(`association: file occupancy form ${r.id}, kept before core's reviews, for review (ngdpbase#2112)`), r.id);
+        filed++;
+      } catch {
+        return { filed, postponed: true };
+      }
+    }
+    return { filed, postponed: false };
+  }
+
+  /**
+   * Every submission waiting for review, oldest first: those whose request is open for `ctx`.
+   * Needs association-review. A submission whose request was rejected elsewhere (/reviews, the
+   * Executive Hub) is marked rejected here as it is found; one approved elsewhere was marked by
+   * its approval.
+   */
   async pending(ctx: ActorContext): Promise<PendingSubmission[]> {
     await this.authorize(ctx);
-    const rows = this.options.db.prepare(`SELECT id, received_at, submitted_by, submitter_name, unit, entry_type, answers
-      FROM association_occupancy_submissions WHERE status = 'pending' ORDER BY received_at, id`).all() as Array<Record<string, string>>;
+    await this.fileWaiting();
+    const open = new Set((await this.reviews().listOpen(ctx)).filter(r => r.kind === OCCUPANCY_REVIEW).map(r => r.id));
+    const rows = this.options.db.prepare(`SELECT id, received_at, submitted_by, submitter_name, unit, entry_type, answers, review_id
+      FROM association_occupancy_submissions WHERE status = 'pending' AND review_id IS NOT NULL ORDER BY received_at, id`).all() as Array<Record<string, string>>;
     const doors = this.options.approval;
     const list: PendingSubmission[] = [];
     for (const r of rows) {
+      if (!open.has(r.review_id)) {
+        await this.followDecision(ctx, r.id, r.review_id);
+        continue;
+      }
       const answers = JSON.parse(r.answers) as Record<string, unknown>;
       const found = doors ? await this.accountsFor(ctx, answer(answers, 'email')) : [];
       list.push({
         id: r.id, receivedAt: r.received_at, submittedBy: r.submitted_by, submitterName: r.submitter_name || r.submitted_by, unit: r.unit,
         entryType: r.entry_type as 'owner' | 'occupant', answers,
+        ...(r.entry_type === 'owner' ? { share: OWNER_SHARE } : {}),
         ...(doors ? { accounts: found.length === 0 ? 'none' as const : found.length === 1 ? 'one' as const : 'several' as const } : {})
       });
     }
     return list;
   }
 
-  /**
-   * Refuse one pending submission: nothing is applied, and it leaves the review list.
-   * Needs association-review; recorded as occupancy-reject before it is made.
-   */
-  async reject(ctx: ActorContext, id: string): Promise<void> {
-    await this.authorize(ctx);
-    const row = this.options.db.prepare(`SELECT unit, entry_type, status FROM association_occupancy_submissions WHERE id = ?`).get(id) as
-      { unit: string; entry_type: string; status: string } | undefined;
-    if (!row) throw new OccupancyReviewError(`no submission ${id}`);
-    if (row.status !== 'pending') throw new OccupancyReviewError(`submission ${id} was already ${row.status}`);
-    const { metadata: whoMetadata, ...who } = this.options.host.actorOf(ctx);
-    const record = (result: 'success' | 'failure', reason?: string): OccupancyAuditRecord => ({
-      eventType: this.options.host.addonAuditEventName('association-review'),
-      ...who,
-      result,
-      action: 'occupancy-reject', severity: 'low', resource: row.unit, resourceType: 'accommodation',
-      metadata: { ...whoMetadata, submissionId: id, entryType: row.entry_type, ...(reason ? { reason } : {}) }
-    });
-    await this.options.recordAudit(record('success'));
+  /** A pending submission whose request is not open for `ctx`: marked rejected when core says it was. */
+  private async followDecision(ctx: ActorContext, id: string, reviewId: string): Promise<void> {
     try {
-      const done = this.options.db.prepare(`UPDATE association_occupancy_submissions SET status = 'rejected' WHERE id = ? AND status = 'pending'`).run(id) as { changes: number };
-      if (done.changes !== 1) throw new Error(`submission ${id} changed while it was being rejected`);
-    } catch (err) {
-      await this.options.recordAudit(record('failure', err instanceof Error ? err.message : String(err))).catch(() => undefined);
-      throw err;
+      const request = await this.reviews().get(ctx, reviewId);
+      if (request?.status === 'rejected') this.markRejected(id);
+    } catch {
+      // Not this viewer's to see, or reviews are off: left as it is.
     }
   }
 
+  private markRejected(id: string): void {
+    this.options.db.prepare(`UPDATE association_occupancy_submissions SET status = 'rejected' WHERE id = ? AND status = 'pending'`).run(id);
+  }
+
   /**
-   * Apply one pending submission for the person with its email (#33), as the reviewer. Checked
-   * first, with nothing written: exactly one account has the email (none, or more than one, is
-   * never guessed), accommodation accepts the entry, and an owner's share is given. Then:
-   * recorded as occupancy-approve (on-failure refuse), the entry added through accommodation,
-   * the details written to the person's identity record, the submission marked approved. If the
-   * details cannot be written, the entry is removed again and the submission stays pending; if
-   * that fails too, the error says the entry is still there.
+   * Decide one pending submission from association's own review page, through its core request
+   * (ngdpbase#2112), so the outcome is the one /reviews and the Executive Hub give: core asks
+   * `association-review` of `ctx` and records the decision, and an approval runs applyReview.
+   * A submission kept before reviews is filed first. A rejection changes nothing but the
+   * submission's status. Returns core's outcome (what approval did) for the page.
    */
-  async approve(ctx: ActorContext, id: string, options: { share?: number; newUsername?: string } = {}): Promise<ApprovalResult> {
+  async decide(ctx: ActorContext, id: string, decision: 'approve' | 'reject'): Promise<{ outcome: string }> {
+    await this.authorize(ctx);
+    const row = this.options.db.prepare(`SELECT status, review_id FROM association_occupancy_submissions WHERE id = ?`).get(id) as
+      { status: string; review_id: string | null } | undefined;
+    if (!row) throw new OccupancyReviewError(`no submission ${id}`);
+    if (row.status !== 'pending') throw new OccupancyReviewError(`submission ${id} was already ${row.status}`);
+    const reviewId = row.review_id ?? await this.file(this.system(`association: file occupancy form ${id}, kept before core's reviews, for review (ngdpbase#2112)`), id);
+    const decided = await this.reviews().decide(ctx, reviewId, decision);
+    if (decision === 'reject') {
+      this.markRejected(id);
+      return { outcome: 'rejected' };
+    }
+    return { outcome: decided.outcome ?? 'approved' };
+  }
+
+  /**
+   * What became of a submission's request, for association's review page after a decision: core's
+   * outcome, or why an approval was not carried out. Needs association-review, and core asks the
+   * request's own permission of `ctx`. Null when there is no such submission or request.
+   */
+  async decisionOf(ctx: ActorContext, id: string): Promise<{ outcome: string | null; failure: string | null } | null> {
+    await this.authorize(ctx);
+    const row = this.options.db.prepare(`SELECT review_id FROM association_occupancy_submissions WHERE id = ?`).get(id) as { review_id: string | null } | undefined;
+    if (!row?.review_id) return null;
+    const request = await this.reviews().get(ctx, row.review_id);
+    return request ? { outcome: request.outcome, failure: request.failure } : null;
+  }
+
+  /**
+   * Carry out an approved occupancy request (core's handler for `association.occupancy`,
+   * ngdpbase#2112). Core has checked that the decider (`ctx`) holds `association-review`, and it
+   * is asked again here; that is the only permission approving needs (operator, 2026-10-29: the
+   * board decides, the system applies). So every write is made under the system context, with a
+   * reason naming the submission, the request and the decider, as accommodation's owner-change
+   * requests are applied: the audit shows who approved and that the system carried it out.
+   *
+   * Checked first, with nothing written: the submission is still pending, at most one account has
+   * its email (more than one is never guessed), and accommodation accepts the entry. An owner's
+   * share is {@link OWNER_SHARE}, as the request says. With no account, one is made with a username
+   * from the name (`first.last`; with a short suffix from the request's id when that is taken).
+   * Then: recorded as occupancy-approve (on-failure refuse), the account made and invited if
+   * needed, the entry added through accommodation, the details written to the identity record, the
+   * submission marked approved. If the details cannot be written, the entry is removed again; if
+   * that fails too, the error says the entry is still there. Throws, leaving the request open with
+   * the reason for the decider, whenever it is not done.
+   */
+  async applyReview(ctx: ActorContext, request: Pick<ReviewRequest, 'id'>): Promise<{ summary: string }> {
     await this.authorize(ctx);
     const doors = this.options.approval;
     if (!doors) throw new OccupancyReviewError('approving is not available on this site (no user or contact manager)');
-    const row = this.options.db.prepare(`SELECT unit, entry_type, status, answers FROM association_occupancy_submissions WHERE id = ?`).get(id) as
-      { unit: string; entry_type: 'owner' | 'occupant'; status: string; answers: string } | undefined;
-    if (!row) throw new OccupancyReviewError(`no submission ${id}`);
-    if (row.status !== 'pending') throw new OccupancyReviewError(`submission ${id} was already ${row.status}`);
+    const row = this.options.db.prepare(`SELECT id, unit, entry_type, status, answers FROM association_occupancy_submissions WHERE review_id = ?`).get(request.id) as
+      { id: string; unit: string; entry_type: 'owner' | 'occupant'; status: string; answers: string } | undefined;
+    if (!row) throw new OccupancyReviewError('No occupancy form is kept for this request any more; reject it, and the owner can send the form again.');
+    if (row.status !== 'pending') throw new OccupancyReviewError(`This occupancy form was already ${row.status}.`);
+    const id = row.id;
+    const system = this.system(`association: occupancy form ${id} (review ${request.id}) approved by ${ctx.username ?? 'unknown'}`);
     const data = JSON.parse(row.answers) as Record<string, unknown>;
 
     const email = answer(data, 'email');
-    const matches = await this.accountsFor(ctx, email);
-    if (matches.length > 1) throw new OccupancyReviewError(`more than one account has the email ${email}; not guessing which`);
-    // No account: the reviewer names a new one, made with no password and an invitation (#34).
-    const newUsername = matches.length === 0 ? (options.newUsername ?? '').trim() : '';
-    if (matches.length === 0 && !/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(newUsername)) {
-      throw new OccupancyReviewError(`no account has the email ${email}; give a username for a new one (letters, digits, . _ -)`);
-    }
-    const username = matches.length === 1 ? matches[0].username : newUsername;
+    const matches = await this.accountsFor(system, email);
+    if (matches.length > 1) throw new OccupancyReviewError(`more than one account has the email ${email}; not guessing which. Fix that on User Management, then approve again.`);
+    // No account: a new one, made with no password and an invitation (#34).
+    const username = matches.length === 1 ? matches[0].username : await this.newUsername(system, data, request.id);
 
     const entry: NewEntry = { parcel: row.unit, type: row.entry_type, from: answer(data, 'from'), to: answer(data, 'to') || 'current' };
-    if (entry.type === 'owner') {
-      const share = options.share;
-      if (typeof share !== 'number' || !Number.isFinite(share) || share <= 0 || share > 100) throw new OccupancyReviewError('an owner\'s share must be a percent above 0 and at most 100');
-      entry.share = share;
-    }
+    if (entry.type === 'owner') entry.share = OWNER_SHARE;
     const problem = this.options.checkEntry(entry);
     if (problem) throw new OccupancyReviewError(problem);
-    const existing = matches.length === 1 ? await doors.findPerson(ctx, username) : null;
+    const existing = matches.length === 1 ? await doors.findPerson(system, username) : null;
     if (matches.length === 1 && !existing) throw new OccupancyReviewError(`${username} has no identity record to hold the details`);
 
     // The owner by identity @id, their username beside it (#2042). A new account has no @id yet,
     // so its rows carry the name; a lookup that cannot answer is null, never a failed approval.
-    const ownerId = existing?.id ?? await this.options.identities?.identityIdOf(ctx, username) ?? null;
-    const { metadata: whoMetadata, ...who } = this.options.host.actorOf(ctx);
+    const ownerId = existing?.id ?? await this.options.identities?.identityIdOf(system, username) ?? null;
+    const { metadata: whoMetadata, ...who } = this.options.host.actorOf(system);
     const record = (result: 'success' | 'failure', reason?: string): OccupancyAuditRecord => ({
       eventType: this.options.host.addonAuditEventName('association-review'),
       ...who,
       result,
       action: 'occupancy-approve', severity: 'medium', resource: row.unit, resourceType: 'accommodation',
-      metadata: { ...whoMetadata, submissionId: id, entryType: row.entry_type, owner: ownerId ?? username, ownerUser: username, newAccount: matches.length === 0, ...(reason ? { reason } : {}) }
+      metadata: { ...whoMetadata, submissionId: id, reviewId: request.id, decidedBy: ctx.username ?? 'unknown', entryType: row.entry_type, owner: ownerId ?? username, ownerUser: username, newAccount: matches.length === 0, ...(reason ? { reason } : {}) }
     });
     // on-failure refuse: no record, no change.
     await this.options.recordAudit(record('success'));
@@ -318,9 +448,9 @@ export default class OccupancyManager {
     if (matches.length === 0) {
       try {
         const displayName = [answer(data, 'firstName'), answer(data, 'lastName')].filter(Boolean).join(' ');
-        await doors.createUser(ctx, { username, email, displayName });
-        invitation = await doors.inviteUser(ctx, username);
-        person = await doors.findPerson(ctx, username);
+        await doors.createUser(system, { username, email, displayName });
+        invitation = await doors.inviteUser(system, username);
+        person = await doors.findPerson(system, username);
         if (!person) throw new Error(`${username} has no identity record to hold the details`);
       } catch (err) {
         return failed(`the account ${username} was not made ready: ${err instanceof Error ? err.message : String(err)}`, err);
@@ -330,7 +460,7 @@ export default class OccupancyManager {
 
     let at: EntryRef | undefined;
     try {
-      at = await doors.addEntry(ctx, username, entry);
+      at = await doors.addEntry(system, username, entry);
     } catch (err) {
       return failed(`the entry was not added: ${err instanceof Error ? err.message : String(err)}`, err);
     }
@@ -339,11 +469,11 @@ export default class OccupancyManager {
     const written = new Set(details.contactPoint.map(c => c.contactType ?? ''));
     const kept = (kept0.contactPoint ?? []).filter(c => !written.has(String((c as Record<string, unknown>)['contactType'])));
     try {
-      await doors.updatePerson(ctx, kept0.id, { ...(details.address ? { address: details.address } : {}), contactPoint: [...kept, ...details.contactPoint] });
+      await doors.updatePerson(system, kept0.id, { ...(details.address ? { address: details.address } : {}), contactPoint: [...kept, ...details.contactPoint] });
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       try {
-        if (at) await doors.removeEntry(ctx, username, at);
+        if (at) await doors.removeEntry(system, username, at);
       } catch (undo) {
         const still = `the details were not written (${why}), and the ${entry.type} entry for ${username} on ${row.unit} could not be removed again (${undo instanceof Error ? undo.message : String(undo)}): it is still in effect`;
         return failed(still, new Error(still));
@@ -358,7 +488,26 @@ export default class OccupancyManager {
       const still = `the entry and the details for ${username} are in effect, but submission ${id} could not be marked approved: ${err instanceof Error ? err.message : String(err)}`;
       return failed(still, new Error(still));
     }
-    return { username, created: matches.length === 0, ...(invitation ? { invitation } : {}) };
+    const result: ApprovalResult = { username, created: matches.length === 0, ...(invitation ? { invitation } : {}) };
+    return { summary: summaryOf(result, entry, row.unit) };
+  }
+
+  /**
+   * The username for a new account: `first.last` from the form, as the review page used to
+   * offer, else the email's local part; with a short suffix from the request's id when an account
+   * has it already. Neither free: throws, and the decider makes the account on User Management.
+   */
+  private async newUsername(ctx: ActorContext, data: Record<string, unknown>, requestId: string): Promise<string> {
+    const clean = (text: string): string => text.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+      .replace(/\s+/g, '.').replace(/[^a-z0-9._-]/g, '').replace(/^[._-]+/, '').slice(0, 56);
+    const fromName = clean([answer(data, 'firstName'), answer(data, 'lastName')].filter(Boolean).join('.'));
+    const base = USERNAME.test(fromName) ? fromName : clean(answer(data, 'email').split('@')[0] ?? '');
+    if (!USERNAME.test(base)) throw new OccupancyReviewError('no username can be made from the name or email; make the account on User Management with this email, then approve again');
+    const doors = this.options.approval!;
+    for (const candidate of [base, `${base}.${requestId.replace(/[^a-z0-9]/gi, '').slice(0, 4).toLowerCase()}`]) {
+      if (USERNAME.test(candidate) && !(await doors.usernameTaken(ctx, candidate))) return candidate;
+    }
+    throw new OccupancyReviewError(`the username ${base} is taken; make the account on User Management with this email, then approve again`);
   }
 
   /**
@@ -368,12 +517,17 @@ export default class OccupancyManager {
   private async referenceOf(stored: string): Promise<string> {
     const identities = this.options.identities;
     if (!identities || !stored || /^(urn:|orphan:)/.test(stored) || stored.toLowerCase() === 'anonymous') return stored;
-    return (await identities.identityIdOf(this.system(), stored)) ?? stored;
+    return (await identities.identityIdOf(this.system('association: identity @id for a submitter (#2042)'), stored)) ?? stored;
   }
 
-  private system(): ActorContext {
-    if (!this.options.systemContext) throw new Error('OccupancyManager: no system context for the identity lookup');
-    return this.options.systemContext();
+  private system(reason: string): ActorContext {
+    if (!this.options.systemContext) throw new Error('OccupancyManager: no system context');
+    return this.options.systemContext(reason);
+  }
+
+  private reviews(): OccupancyReviews {
+    if (!this.options.reviews) throw new Error('OccupancyManager was started without core\'s reviews');
+    return this.options.reviews;
   }
 
   /**
@@ -388,7 +542,7 @@ export default class OccupancyManager {
     const identities = this.options.identities;
     if (!identities) return { converted: 0, orphans: 0, postponed: false };
     if (!identities.canAnswer()) return { converted: 0, orphans: 0, postponed: true };
-    const ctx = this.system();
+    const ctx = this.system('association: convert stored submitters to identity @ids (#2042)');
     const rows = this.options.db.prepare(`SELECT id, submitted_by, submitter_name FROM association_occupancy_submissions`).all() as Array<Record<string, string>>;
     let converted = 0, orphans = 0;
     try {
@@ -407,7 +561,7 @@ export default class OccupancyManager {
     return { converted, orphans, postponed: false };
   }
 
-  /** The accounts whose email is exactly this one, found as the reviewer. */
+  /** The accounts whose email is exactly this one, found with `ctx` (the viewer listing, or the system applying). */
   private async accountsFor(ctx: ActorContext, email: string): Promise<Array<{ username: string }>> {
     const doors = this.options.approval!;
     return (await doors.searchUsers(ctx, email)).filter(u => (u.email ?? '').trim().toLowerCase() === email.toLowerCase());
@@ -420,15 +574,18 @@ export default class OccupancyManager {
   }
 
   /**
-   * How many submissions wait for review, for the viewer of the Executive Hub card (ngdpbase#2094).
+   * How many submissions wait for review, for the viewer of the Executive Hub card (ngdpbase#2094):
+   * the open occupancy requests core lists for them, and any kept before reviews and not filed yet.
    * Needs association-review, asked with the viewer's context; a "no" throws. A count only.
    */
   async waitingCount(ctx: ActorContext): Promise<number> {
     await this.authorize(ctx);
-    return this.pendingCount();
+    const open = (await this.reviews().listOpen(ctx)).filter(r => r.kind === OCCUPANCY_REVIEW).length;
+    const unfiled = this.options.db.prepare(`SELECT COUNT(*) AS n FROM association_occupancy_submissions WHERE status = 'pending' AND review_id IS NULL`).get() as { n: number };
+    return open + unfiled.n;
   }
 
-  /** How many submissions wait for review. */
+  /** How many submissions are kept as pending (a request rejected elsewhere is counted until the review page is next opened). */
   pendingCount(): number {
     const row = this.options.db.prepare(`SELECT COUNT(*) AS n FROM association_occupancy_submissions WHERE status = 'pending'`).get() as { n: number };
     return row.n;

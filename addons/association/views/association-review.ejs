@@ -5,10 +5,12 @@
     <h2 class="mb-0"><i class="fas fa-clipboard-check me-2"></i>Occupancy review</h2>
     <a href="/admin" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
   </div>
-  <p class="text-muted">Occupancy information (ORC 5311.09) waiting for review. Nothing is changed until a submission is approved.</p>
+  <p class="text-muted">Occupancy information (ORC 5311.09) waiting for review. Nothing is changed until a submission is approved. Each one is also on <a href="/reviews">Reviews</a> and the board's Executive Hub; deciding it in any of them is the same decision.</p>
 
   <% if (flash === 'approved') { %>
-    <div class="alert alert-success" data-testid="flash-approved">Approved for <%= reason %>: the entry and the details are applied.</div>
+    <div class="alert alert-success" data-testid="flash-approved">Approved. <%= reason %></div>
+  <% } else if (flash === 'failed') { %>
+    <div class="alert alert-danger" data-testid="flash-failed">Approved, but not carried out, so it is still waiting: <%= reason %></div>
   <% } else if (flash === 'rejected') { %>
     <div class="alert alert-info" data-testid="flash-rejected">Rejected. Nothing was applied.</div>
   <% } else if (flash === 'refused') { %>
@@ -34,16 +36,8 @@
         </dl>
         <form method="POST" action="/addons/association/review/<%= encodeURIComponent(s.id) %>/approve" class="d-inline-flex gap-1 align-items-center me-2">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-          <% if (s.accounts === 'none') { %>
-            <label class="small" for="user-<%= s.id %>">New username</label>
-            <input type="text" id="user-<%= s.id %>" name="newUsername" class="form-control form-control-sm" style="width: 10rem" required
-              value="<%= String((a.firstName || '') + '.' + (a.lastName || '')).toLowerCase().replace(/[^a-z0-9._-]/g, '') %>">
-          <% } else if (s.accounts === 'several') { %>
+          <% if (s.accounts === 'several') { %>
             <span class="small text-danger">More than one account has this email: fix that first.</span>
-          <% } %>
-          <% if (s.entryType === 'owner') { %>
-            <label class="small" for="share-<%= s.id %>">Share %</label>
-            <input type="number" id="share-<%= s.id %>" name="share" class="form-control form-control-sm" style="width: 6rem" min="0.01" max="100" step="any" value="100" required>
           <% } %>
           <button type="submit" class="btn btn-sm btn-success">Approve</button>
         </form>
@@ -51,8 +45,8 @@
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
         </form>
-        <p class="small text-muted mt-2 mb-0">Approving adds the <%= s.entryType %> entry for the account with this email and writes the details to their contact record.
-          <% if (s.accounts === 'none') { %>No account has this email yet: approving makes one with no password and emails them an invitation to set it up.<% } %></p>
+        <p class="small text-muted mt-2 mb-0">Approving adds the <%= s.entryType %> entry<% if (s.share) { %>, with a <%= s.share %>% share (a different split is set on the unit's page afterwards),<% } %> for the account with this email and saves the details to its identity record. The site applies it, naming you as the one who approved.
+          <% if (s.accounts === 'none') { %>No account has this email yet: approving makes one with no password, with a username from the name, and emails them an invitation to set it up.<% } %></p>
       </div>
     </div>
   <% }) %>

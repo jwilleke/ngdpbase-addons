@@ -2,12 +2,13 @@
  * Occupancy review pages (#33) — mounted at /addons/association by index.ts.
  *
  *   GET  /review              the submissions waiting for review
- *   POST /review/:id/reject   refuse one; nothing is applied
- *   POST /review/:id/approve  apply one for the person with its email (an owner's share in `share`)
+ *   POST /review/:id/reject   reject one through its core review request; nothing is applied
+ *   POST /review/:id/approve  approve one through its core review request; core runs
+ *                             OccupancyManager.applyReview, which applies it as the system
  *
- * Each asks `association-review` here, and OccupancyManager asks again at its door and records
- * the decision. A refusal goes out through enforceDeny and sendApiError; a review refused for
- * a reason (already decided, not found) goes back to the page with the reason.
+ * Each asks `association-review` here, OccupancyManager asks again, and core asks again and
+ * records the decision (ngdpbase#2112). A refusal goes out through enforceDeny and sendApiError
+ * (403); a decision refused for a reason goes back to the page with the reason.
  */
 import type { Request, Response, Router } from 'express';
 import type { AddonHost } from '@jwilleke/ngdpbase-types';
@@ -33,37 +34,61 @@ export default function reviewRoutes(engine: Engine, host: AddonHost): Router {
       try {
         const ctx = ApiContext.from(req, engine as never);
         await ctx.requirePermission('association-review');
+        const flash = typeof req.query['flash'] === 'string' ? req.query['flash'] : '';
+        const id = typeof req.query['id'] === 'string' ? req.query['id'] : '';
+        // An approval's outcome, or why it was not carried out, read from core under the viewer's own check.
+        const decided = (flash === 'approved' || flash === 'failed') && id ? await occupancy().decisionOf(ctx.getActor(), id) : null;
         res.render('association-review', {
           ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           submissions: await occupancy().pending(ctx.getActor()),
-          flash: typeof req.query['flash'] === 'string' ? req.query['flash'] : '',
-          reason: typeof req.query['reason'] === 'string' ? req.query['reason'] : ''
+          flash,
+          reason: decided ? (flash === 'approved' ? decided.outcome : decided.failure) ?? '' : typeof req.query['reason'] === 'string' ? req.query['reason'] : ''
         });
       } catch (err) {
-        if (err instanceof ApiError) { sendApiError(res, err, 'page'); return; }
-        res.status(500).send('Could not show the occupancy submissions');
+        try {
+          // A refusal at association's door or core's is a plain refusal, never a 500.
+          if ((err as Error)?.name === 'OccupancyRefusedError' || (err as Error)?.name === 'ReviewRefusedError') {
+            const refused = err as { permission: string; decision: never };
+            await ApiContext.from(req, engine as never).enforceDeny(refused.permission, refused.decision);
+          }
+          throw err;
+        } catch (answer) {
+          if (answer instanceof ApiError) { sendApiError(res, answer, 'page'); return; }
+          host.logger.error(`[association] The occupancy review page failed: ${answer instanceof Error ? answer.name : 'error'}`);
+          res.status(500).send('Could not show the occupancy submissions');
+        }
       }
     })();
   });
 
-  /** A decision on one submission: refusals by policy through enforceDeny, refusals for a reason back to the page. */
-  const decide = (what: 'reject' | 'approve', act: (ctx: ReturnType<typeof ApiContext.from>, req: Request) => Promise<string>) =>
+  /**
+   * A decision on one submission, through its core review request (ngdpbase#2112): the same
+   * outcome as /reviews and the Executive Hub. A refusal by policy (association's door or core's,
+   * `association-review` either way) goes out through enforceDeny as a plain 403; a decision
+   * refused for a reason (already decided, not found, an approval that could not be carried out)
+   * goes back to the page with the reason. Anything else is a 500 and is logged.
+   */
+  const decide = (what: 'reject' | 'approve') =>
     (req: Request, res: Response): void => {
       void (async () => {
         const ctx = ApiContext.from(req, engine as never);
+        const id = String(req.params['id']);
         try {
           await ctx.requirePermission('association-review');
-          res.redirect(`/addons/association/review?flash=${await act(ctx, req)}`);
+          await occupancy().decide(ctx.getActor(), id, what);
+          // Only the outcome code and the submission's id go in the URL; the page reads what was done from core.
+          res.redirect(`/addons/association/review?flash=${what === 'reject' ? 'rejected' : `approved&id=${encodeURIComponent(id)}`}`);
         } catch (err) {
           try {
             const name = (err as Error).name;
-            // association's own door (association-review) and accommodation's (accommodation-manage)
-            if (name === 'OccupancyRefusedError' || name === 'AccommodationRefusedError') {
+            if (name === 'OccupancyRefusedError' || name === 'ReviewRefusedError') {
               const refused = err as { permission: string; decision: never };
               await ctx.enforceDeny(refused.permission, refused.decision); // always throws the ApiError
             }
-            if (name === 'OccupancyReviewError' || name === 'LinkChangeRefusedError') {
+            // The add-on's reason can name someone: kept on the request, read back by the page, never put in the URL.
+            if (name === 'ReviewHandlerFailedError') { res.redirect(`/addons/association/review?flash=failed&id=${encodeURIComponent(id)}`); return; }
+            if (['OccupancyReviewError', 'ReviewNotOpenError', 'ReviewsUnavailableError'].includes(name)) {
               res.redirect(`/addons/association/review?flash=refused&reason=${encodeURIComponent((err as Error).message)}`);
               return;
             }
@@ -78,21 +103,8 @@ export default function reviewRoutes(engine: Engine, host: AddonHost): Router {
       })();
     };
 
-  router.post('/review/:id/reject', decide('reject', async (ctx, req) => {
-    await occupancy().reject(ctx.getActor(), String(req.params['id']));
-    return 'rejected';
-  }));
-
-  router.post('/review/:id/approve', decide('approve', async (ctx, req) => {
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const share = typeof body['share'] === 'string' ? Number(body['share']) : undefined;
-    const newUsername = typeof body['newUsername'] === 'string' ? body['newUsername'] : undefined;
-    const result = await occupancy().approve(ctx.getActor(), String(req.params['id']), { share, newUsername });
-    const said = !result.created ? result.username
-      : result.invitation?.outcome === 'sent' ? `${result.username}, a new account, invited by email`
-        : `${result.username}, a new account; the invitation was not sent (${result.invitation?.reason ?? result.invitation?.outcome ?? 'unknown'}): resend it from User Management`;
-    return `approved&reason=${encodeURIComponent(said)}`;
-  }));
+  router.post('/review/:id/reject', decide('reject'));
+  router.post('/review/:id/approve', decide('approve'));
 
   return router;
 }

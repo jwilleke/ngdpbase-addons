@@ -48,4 +48,15 @@ const SUBMITTER_NAME: AssociationMigration = {
   }
 };
 
-export const ASSOCIATION_MIGRATIONS: AssociationMigration[] = [OCCUPANCY_SUBMISSIONS, SUBMITTER_NAME];
+const REVIEW_REQUEST: AssociationMigration = {
+  id: '20261029120000',
+  description: "The core review request each submission is decided through (ngdpbase#2112)",
+  up: (db) => {
+    db.exec(`
+      ALTER TABLE association_occupancy_submissions ADD COLUMN review_id TEXT;
+      CREATE UNIQUE INDEX association_occupancy_submissions_review ON association_occupancy_submissions (review_id);
+    `);
+  }
+};
+
+export const ASSOCIATION_MIGRATIONS: AssociationMigration[] = [OCCUPANCY_SUBMISSIONS, SUBMITTER_NAME, REVIEW_REQUEST];

@@ -9,8 +9,9 @@
  * Declaration, the Bylaws, a board rule), as each feature needs one. No statute profiles yet.
  *
  * The Occupancy information form (ORC 5311.09; #17, #32): register() ships it to the forms
- * add-on and registers its handler, which keeps every submission for review in the add-on's
- * encrypted database (OccupancyManager) and tells the holders of `association-review`.
+ * add-on and registers its handler, which keeps every submission in the add-on's encrypted
+ * database (OccupancyManager) and files it with core's reviews for the holders of
+ * `association-review` (ngdpbase#2112); its review handler applies an approved one as the system.
  *
  * Configuration keys:
  *   ngdpbase.addons.association.enabled  — true/false (defaults to false); needs
@@ -24,7 +25,7 @@ import type { ActorContext, AddonHost, Decision } from '@jwilleke/ngdpbase-types
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import reviewRoutes from './routes/review.js';
-import OccupancyManager, { type ApprovalDoors, type EntryRef, type IdentityDoors, type OccupancyAuditRecord, type OccupancyDb, type OccupancyManagerOptions, type OccupancySubmission } from './managers/OccupancyManager.js';
+import OccupancyManager, { OCCUPANCY_REVIEW, type ApprovalDoors, type EntryRef, type IdentityDoors, type OccupancyAuditRecord, type OccupancyDb, type OccupancyManagerOptions, type OccupancySubmission } from './managers/OccupancyManager.js';
 import { ASSOCIATION_LEDGER_TABLE, ASSOCIATION_MIGRATIONS } from './managers/migrations.js';
 import { OCCUPANCY_FORM_ID, occupancyForm } from './forms/occupancyForm.js';
 
@@ -63,7 +64,6 @@ interface DatabaseManagerLike {
 }
 interface PolicyDecisionPointLike {
   decide(ctx: ActorContext, request: { action: string }): Promise<Decision>;
-  usersHolding(action: string): Promise<string[] | null>;
 }
 interface AddonsManagerLike {
   registerDashboardCard(card: {
@@ -74,9 +74,6 @@ interface AddonsManagerLike {
   }): void;
   /** Present on a core with the Executive Hub (ngdpbase#2093). */
   executiveCardsFor?: unknown;
-}
-interface NotificationManagerLike {
-  addNotification(n: { type: 'system'; level: 'info'; title: string; message: string; targetUsers: string[] }): Promise<string>;
 }
 interface FormsDataManagerLike { registerShippedForm(addon: string, definition: unknown, ctx: ActorContext): Promise<string> }
 interface FormsAddonLike {
@@ -119,50 +116,49 @@ const AssociationAddon = {
       // occupancy-submit is a refuse event: a record that cannot be written throws here, and nothing is kept.
       await host.recordAuditEvent(auditSink, record as never);
     };
-    const notifyReviewers = async (title: string, message: string): Promise<void> => {
-      try {
-        const reviewers = await engine.getManager<PolicyDecisionPointLike>('PolicyDecisionPoint')?.usersHolding('association-review');
-        // An empty targetUsers would be every user: with nobody to tell, log only.
-        if (!reviewers || reviewers.length === 0) { logger.info(`[association] Nobody holds association-review to tell: ${message}`); return; }
-        await engine.getManager<NotificationManagerLike>('NotificationManager')?.addNotification({ type: 'system', level: 'info', title, message, targetUsers: reviewers });
-      } catch (err) {
-        logger.error(`[association] Could not tell the reviewers (${message}): ${err instanceof Error ? err.message : String(err)}`);
-      }
-    };
 
     const pdp = engine.getManager<PolicyDecisionPointLike>('PolicyDecisionPoint');
     // No decision point is a "no" (fail closed).
     const decide = async (ctx: ActorContext, request: { action: string }): Promise<Decision> =>
       pdp ? pdp.decide(ctx, request) : { permit: false, applicable: false, reason: 'no_decision_point' } as Decision;
-    // Approving (#33) goes through accommodation, core's users and core's contacts, each as the reviewer.
+    // Approving (#33) goes through accommodation, core's users and core's contacts, each under the
+    // system context applyReview gives it, with the decider in its reason (ngdpbase#2112).
     const users = engine.getManager<UserManagerLike>('UserManager');
     const persons = engine.getManager<IdentityManagerLike>('IdentityManager');
     const approval: ApprovalDoors | undefined = users && persons ? {
       searchUsers: (ctx, email) => users.searchUsers(email, { limit: 2, activeOnly: false }, ctx),
+      usernameTaken: async (ctx, username) => (await users.searchUsers(username, { limit: 0, activeOnly: false }, ctx))
+        .some(u => u.username.toLowerCase() === username.toLowerCase()),
       addEntry: async (ctx, username, entry) => (await residency.changeLink(ctx, username, { op: 'add', link: entry })).at,
       removeEntry: async (ctx, username, at) => { await residency.changeLink(ctx, username, { op: 'remove', at }); },
-      // The account's own identity record, read as the reviewer (identity-read, from the review policy).
+      // The account's own identity record.
       findPerson: async (ctx, username) => {
         const found = await persons.getByUserIdentifier(ctx, username);
         return found ? { id: found['@id'], contactPoint: found.contactPoint } : null;
       },
       updatePerson: (ctx, id, patch) => persons.update(ctx, id, patch),
       contactDetails: (answers) => residency.contactDetails(answers),
-      // Someone with no account (#34): made with no password, then invited, both as the reviewer.
+      // Someone with no account (#34): made with no password, then invited.
       createUser: (ctx, user) => users.createUser(user, ctx),
       inviteUser: async (ctx, username) => {
         const auth = engine.getManager<AuthManagerLike>('AuthManager');
         return auth ? auth.inviteUser(ctx, username) : { outcome: 'not-sent', reason: 'AuthManager is not available' };
       }
     } : undefined;
-    const systemContext = (): ActorContext => host.systemContext('association: identity @id for a submitter (#2042)');
-    occupancy = new OccupancyManager({ db, decide, recordAudit, host, approval, checkEntry: (entry) => residency.checkEntry(entry), notifyReviewers,
+    occupancy = new OccupancyManager({ db, decide, recordAudit, host, approval, checkEntry: (entry) => residency.checkEntry(entry),
+      // Every submission is filed and decided with core's reviews (ngdpbase#2112).
+      reviews: host.reviews,
+      systemContext: (reason) => host.systemContext(reason),
       ...(persons ? { identities: {
         identityIdOf: (ctx, username) => persons.identityIdOf(ctx, username),
         canAnswer: () => persons.canAnswer(),
         convertReference: (ctx, stored) => persons.convertReference(ctx, stored)
-      }, systemContext } : {}) });
+      } } : {}) });
     engine.registerManager('OccupancyManager', occupancy);
+    // Carries out an approved occupancy request, as the system, naming the decider (ngdpbase#2112).
+    // Registered on every start, before anything is filed, so a site that turns reviews on later works.
+    const applying = occupancy;
+    host.registerReviewHandler(OCCUPANCY_REVIEW, (request, ctx) => applying.applyReview(ctx, request));
     // Stored submitters that are still usernames become identity @ids, once (#2042).
     attention = null;
     if (persons) {
@@ -177,6 +173,14 @@ const AssociationAddon = {
           logger.warn(`[association] ${attention}`);
         }
       }
+    }
+    // Submissions kept before reviews are filed now, once each, under the system context (ngdpbase#2112).
+    const waiting = await occupancy.fileWaiting();
+    if (waiting.filed > 0) logger.info(`[association] Filed ${waiting.filed} occupancy submission(s) kept before core's reviews for review`);
+    if (waiting.postponed) {
+      const note = 'occupancy submissions kept before core\'s reviews are not filed for review yet: retried when the review page opens and at the next start';
+      attention = attention ? `${attention}; ${note}` : note;
+      logger.warn(`[association] ${note}`);
     }
     unavailable = null;
 
