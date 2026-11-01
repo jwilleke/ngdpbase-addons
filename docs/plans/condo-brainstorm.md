@@ -85,7 +85,7 @@ Recorded on [#9](https://github.com/jwilleke/ngdpbase-addons/issues/9).
 - A board "vault": open. An ngdpbase vault is one person's private store, so a space the board shares
   is more likely condo's own page category, restricted by permission.
 - Maintenance requests themselves belong to the request-response engine
-  ([request-response-brainstorm.md](request-response-brainstorm.md)); the Fairways process doc is
+  ([request-response-brainstorm.md](https://github.com/jwilleke/ngdpbase/blob/master/docs/planning/request-response-brainstorm.md)); the Fairways process doc is
   "Maintenance Requests Process" in the shared folder.
 
 ## Structure: accommodation, governance, association, rentals (2026-10-23)
@@ -266,7 +266,7 @@ See [condos-planning.md](../condos-planning.md) (operator, 2026-10-26).
   fit without code.
 - __Resident needs__ (operator: yes, to explore): resident directory, emergency contacts (Fairways users
   carry `emergencyContact`), vehicles and parking, pets, maintenance requests (see
-  [request-response-brainstorm.md](request-response-brainstorm.md)).
+  [request-response-brainstorm.md](https://github.com/jwilleke/ngdpbase/blob/master/docs/planning/request-response-brainstorm.md)).
 
 ## Open questions
 

@@ -15,4 +15,4 @@ others and of any one site.
 ## Plans
 
 - [Condo add-on — brainstorm notes](docs/plans/condo-brainstorm.md)
-- [Request-response engine — brainstorm notes](docs/plans/request-response-brainstorm.md)
+- [Request-response engine — brainstorm notes](https://github.com/jwilleke/ngdpbase/blob/master/docs/planning/request-response-brainstorm.md)
