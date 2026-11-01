@@ -160,3 +160,35 @@ request type, or per request).
 
 1. Routing / triage (TBD, see above).
 2. How `/contact` hands a submission to the add-on (a core change, for the ngdpbase session).
+
+## Proposed decisions (2026-11-01, awaiting operator confirmation)
+
+- __Storage: SQLite through core, not JSON files.__ The engine declares its own add-on database
+  (`ngdpbase.addons.<slug>.database`) and opens it with `DatabaseManager.openAddonDatabase()` from
+  `register()`, with tables and the migration ledger prefixed by its slug. It gets encryption, migrations,
+  integrity checks and backups from core. JSON only for exports and the API.
+- __Dates: ISO 8601__ everywhere (stored and in the API), with time zone offset.
+- __Receipts: handled by ngdp-accounting-addons.__ A request or response only links to the receipt;
+  accounting stores it and controls who can open it. The engine ends at "approved"; accounting pays and
+  posts the ledger entry.
+- __Standards:__
+  - schema.org: a request is an `Action` (for example `RepairAction`), status maps to
+    `ActionStatusType`, a response is a `Comment` or follow-up `Action`, an estimate is a `Quotation`
+    or `Offer`, an invoice is `Invoice`; people and units are `Person` and `Accommodation`.
+  - RFCs: RFC 5545 (iCalendar) for due dates and scheduled work, RFC 5322 for notification email,
+    RFC 9457 for API errors.
+  - US accounting (in ngdp-accounting-addons, not here): GAAP with fund accounting (operating and
+    reserve funds) and the AICPA guide for common-interest realty associations. The engine hands over
+    only an approved amount, a category and a link to the request.
+
+## Next steps (2026-11-01, not filed as issues yet)
+
+- __Read the current Request Form script__ (old `fairways-request-response` project or the responses
+  sheet) before designing, so nothing it does is missed.
+- __Notifications (still open):__ suggestion is email plus a "waiting for you" list in `/profile`, sent
+  from a durable outbox with retry.
+- __Migrate the 1,100+ existing requests__ from Sheets into the add-on so history is kept.
+- __Interim Google cleanup:__ move the UnitManagement Apps Script and Shared-Fairways-Directory to
+  fairwaywebevents; delete the "On change" trigger (`myFunction` only logs rows).
+- __First version scope:__ request, responses, status with allowed steps, email, search. Approvals and
+  payment hand-off later.
